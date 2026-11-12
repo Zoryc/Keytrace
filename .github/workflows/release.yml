@@ -1,0 +1,90 @@
+# Builds the Windows installer and publishes a GitHub release with only that file attached.
+#
+# Automatic: push a version tag that matches midiconv/__init__.py, e.g.
+#   git tag -a v0.2.1 -m "Keytrace 0.2.1" && git push origin v0.2.1
+# Manual: Actions > Release > Run workflow, and enter an existing tag (e.g. v0.2.0) to build and
+#   release that tag's exact code (useful for tags pushed before this workflow existed).
+#
+# Release notes: docs/release-notes/<tag>.md (taken from the tag, or from the default branch if the
+# tag predates the file); the installer's SHA-256 is appended.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Check that the tag matches the app version
+        shell: powershell
+        run: |
+          $m = Select-String -Path midiconv/__init__.py -Pattern '__version__ = "([^"]+)"'
+          $version = $m.Matches[0].Groups[1].Value
+          if ("v$version" -ne $env:TAG) { throw "Tag $env:TAG does not match __version__ $version" }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install Inno Setup if needed
+        shell: powershell
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup was not found at $iscc" }
+          "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Use the committed icon
+        shell: powershell
+        # build.ps1 re-renders Keytrace.ico when a master SVG looks newer; checkout times are arbitrary.
+        run: (Get-Item installer/assets/Keytrace.ico).LastWriteTime = Get-Date
+
+      - name: Build the installer
+        shell: powershell
+        run: |
+          & .\installer\build.ps1 -Python (Get-Command python).Source -Iscc $env:ISCC
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Publish the release (installer only)
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = "installer/dist/Keytrace-Setup-$env:VERSION.exe"
+          if (-not (Test-Path $exe)) { throw "$exe was not built" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          $notesPath = "docs/release-notes/$env:TAG.md"
+          if (Test-Path $notesPath) {
+            $notes = Get-Content $notesPath -Raw -Encoding utf8
+          } else {
+            $notes = (git show "origin/${{ github.event.repository.default_branch }}:$notesPath" 2>$null) -join "`n"
+            if (-not $notes) { $notes = "Keytrace $env:VERSION" }
+          }
+          $notes += "`n`n---`nSHA-256 of ``Keytrace-Setup-$env:VERSION.exe``: ``$hash```n"
+          [IO.File]::WriteAllText("$PWD\release-notes.md", $notes, (New-Object Text.UTF8Encoding $false))
+          gh release create $env:TAG $exe --title "Keytrace $env:VERSION" --notes-file release-notes.md --verify-tag
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
