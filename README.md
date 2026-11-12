@@ -85,6 +85,7 @@ Note-onset F1 (%), where a note counts when its pitch is right and its start is 
 | Aria-AMT alone | 97.54 | 97.56 | 95.82 | 97.62 | 96.70 | 89.96 |
 | **Ensemble (this app's default)** | **98.61** | **98.59** | **97.79** | **98.60** | **98.11** | **96.62** |
 
+- **Other models:** MuScriptor medium (Kyutai/Mirelo 2026, the multi-instrument model NeuralNote v2 uses) scored 86.46 at best on the clean set (`bench/muscriptor_bench.py`), about 12 points below. It also outputs no velocity or pedal. A general multi-instrument model is not a match for a piano specialist here.
 - **Ensemble:** it also improves note ends (by +0.18 to +0.30 points) and sounding lengths with the pedal (by +0.30 to +0.73 points). Velocity is unchanged. Note detection is better on 7–9 of the 12 pieces in every condition, worse on at most one, and equal on the rest.
 - **Stereo views:** compared with the paper settings, they improve note-end accuracy on 11 of 12 pieces. On noisy audio they also improve sustain-pedal accuracy by up to 6.6 points.
 - **Where to find the details:** the full tables and the method are in `bench/`. Every rule and threshold was chosen by leave-one-piece-out cross-validation.
