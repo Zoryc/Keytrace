@@ -5,23 +5,24 @@ using System.Windows.Forms;
 
 namespace MidiConverterLauncher
 {
-    /// <summary>The app's colours (web/styles.css, light theme).</summary>
+    /// <summary>The app's "Essential" colours (web/styles.css, light theme).</summary>
     internal static class Theme
     {
-        public static readonly Color Accent = Color.FromArgb(0x5B, 0x5B, 0xD6);
-        public static readonly Color AccentHover = Color.FromArgb(0x6A, 0x6A, 0xE0);
-        public static readonly Color AccentPressed = Color.FromArgb(0x4D, 0x4D, 0xC2);
-        public static readonly Color AccentSoft = Color.FromArgb(0xE9, 0xE9, 0xFA);   // rgba(91,91,214,.12) on white
+        public static readonly Color Accent = Color.FromArgb(0x2C, 0x75, 0x67);
+        public static readonly Color AccentHover = Color.FromArgb(0x24, 0x65, 0x5A);
+        public static readonly Color AccentPressed = Color.FromArgb(0x1D, 0x56, 0x4C);
+        public static readonly Color AccentDisabled = Color.FromArgb(0xA0, 0xC1, 0xBB); // accent at 45% on white
+        public static readonly Color AccentSoft = Color.FromArgb(0xEA, 0xF3, 0xF0);     // --tint: the progress track
         public static readonly Color Surface = Color.White;
-        public static readonly Color Surface2 = Color.FromArgb(0xFA, 0xFA, 0xF8);
-        public static readonly Color Ink = Color.FromArgb(0x1C, 0x1C, 0x1F);
-        public static readonly Color Ink2 = Color.FromArgb(0x3A, 0x3A, 0x40);
-        public static readonly Color Muted = Color.FromArgb(0x74, 0x74, 0x7C);
-        public static readonly Color Line = Color.FromArgb(0xE7, 0xE6, 0xE1);
-        public static readonly Color Line2 = Color.FromArgb(0xEF, 0xEE, 0xE9);
-        public static readonly Color Danger = Color.FromArgb(0xC4, 0x37, 0x3A);
-        public static readonly Color HoverGray = Color.FromArgb(0xF3, 0xF3, 0xF1);
-        public static readonly Color PressedGray = Color.FromArgb(0xEA, 0xEA, 0xE7);
+        public static readonly Color Surface2 = Color.FromArgb(0xF6, 0xF8, 0xF7);       // --bg
+        public static readonly Color Ink = Color.FromArgb(0x1B, 0x25, 0x23);
+        public static readonly Color Ink2 = Color.FromArgb(0x39, 0x45, 0x42);
+        public static readonly Color Muted = Color.FromArgb(0x5D, 0x69, 0x66);
+        public static readonly Color Line = Color.FromArgb(0xE0, 0xE7, 0xE4);
+        public static readonly Color Line2 = Color.FromArgb(0xED, 0xF1, 0xEF);
+        public static readonly Color Danger = Color.FromArgb(0xB0, 0x3A, 0x3A);
+        public static readonly Color HoverGray = Color.FromArgb(0xF1, 0xF5, 0xF3);
+        public static readonly Color PressedGray = Color.FromArgb(0xE6, 0xED, 0xEA);
 
         public static GraphicsPath RoundedRect(RectangleF r, float radius)
         {
@@ -109,7 +110,7 @@ namespace MidiConverterLauncher
             Color fill, border, text;
             if (primary)
             {
-                fill = !Enabled ? Color.FromArgb(0xB4, 0xB4, 0xEA) : pressed ? Theme.AccentPressed : hover ? Theme.AccentHover : Theme.Accent;
+                fill = !Enabled ? Theme.AccentDisabled : pressed ? Theme.AccentPressed : hover ? Theme.AccentHover : Theme.Accent;
                 border = fill;
                 text = Color.White;
             }

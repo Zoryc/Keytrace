@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ctypes
 import faulthandler
+import html
 import json
 import logging
 import logging.handlers
@@ -48,7 +49,8 @@ def _focus_existing_window() -> None:
         u32.SetForegroundWindow(hwnd)
 
 
-def _dark_mode() -> bool:
+def _windows_dark() -> bool:
+    """True when Windows apps use the dark theme (Settings > Personalization > Colors)."""
     try:
         import winreg
 
@@ -57,6 +59,19 @@ def _dark_mode() -> bool:
             return winreg.QueryValueEx(k, "AppsUseLightTheme")[0] == 0
     except OSError:
         return False
+
+
+def _appearance() -> str:
+    """The theme chosen in the app: settings.appearance in settings.json ('light' unless set)."""
+    try:
+        value = json.loads((data_dir() / "settings.json").read_text(encoding="utf-8")).get("appearance")
+    except (OSError, ValueError, AttributeError):
+        value = None
+    return value if value in ("light", "system", "dark") else "light"
+
+
+def _effective_dark(appearance: str) -> bool:
+    return appearance == "dark" or (appearance == "system" and _windows_dark())
 
 
 def _message_box(text: str, title: str = APP_NAME, flags: int = 0x30) -> int:
@@ -91,6 +106,8 @@ class DesktopApi:
 
     def __init__(self):
         self._window = None
+        self._dark = None  # the theme applied to the window frame
+        self._theme_lock = threading.Lock()  # keeps the last call last
         self._prefs_path = data_dir() / "desktop.json"
 
     def _prefs(self) -> dict:
@@ -140,27 +157,62 @@ class DesktopApi:
     def app_info(self) -> dict:
         return {"version": __version__, "data_dir": str(data_dir())}
 
+    def set_theme(self, dark) -> bool:
+        """Match the title bar and the window background to the page's theme (called by the page
+        at startup and whenever its effective theme changes)."""
+        dark = dark.strip().lower() in ("1", "true", "dark") if isinstance(dark, str) else bool(dark)
+        with self._theme_lock:
+            if self._window is not None and dark != self._dark:
+                self._dark = dark
+                _style_window(self._window, dark, set_icon=False)
+        return dark
+
 
 # ---------------------------------------------------------------------------- pages
-def _loading_html(dark: bool) -> str:
-    bg, ink, muted, accent = ("#0f1013", "#ececf1", "#8e8e98", "#8484ff") if dark else ("#f5f5f2", "#1c1c1f", "#74747c", "#5b5bd6")
+# The interface's "Essential" palette (web/styles.css), light and dark: keep in step. BRAND is the
+# app mark's colour (installer/make_icon.py), the same in both themes.
+BRAND = "#2C7567"
+PALETTE = {
+    False: {"bg": "#F6F8F7", "ink": "#1B2523", "ink2": "#394542", "muted": "#5D6966", "accent": "#2C7567",
+            "tint": "#EAF3F0", "danger": "#B03A3A"},
+    True: {"bg": "#0F1513", "ink": "#E4ECE9", "ink2": "#C2CDCA", "muted": "#8F9D99", "accent": "#5FC0A9",
+           "tint": "#1A2C28", "danger": "#F0938B"},
+}
+_MARK = (f'<svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="{BRAND}"/>'
+         '<path d="M9 9v14M14 9v14M19 9v14M24 9v14" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'
+         '<rect x="11" y="9" width="4" height="8" rx="1.2" fill="#fff"/>'
+         '<rect x="20" y="9" width="4" height="8" rx="1.2" fill="#fff"/></svg>')
+
+
+def _page(dark: bool, body: str) -> str:
+    c = PALETTE[dark]
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{{margin:0;height:100%;background:{bg};color:{ink};font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif}}
-.c{{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}}
-svg{{width:56px;height:56px}} .t{{font-size:20px;font-weight:600;letter-spacing:-.01em}} .m{{color:{muted};font-size:14px}}
-.b{{width:160px;height:4px;border-radius:9px;background:{muted}33;overflow:hidden}}
-.b i{{display:block;width:35%;height:100%;border-radius:9px;background:{accent};animation:s 1.1s ease-in-out infinite}}
-@keyframes s{{from{{transform:translateX(-100%)}}to{{transform:translateX(300%)}}}}
-</style></head><body><div class="c">
-<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="{accent}"/><path d="M9 9v14M14 9v14M19 9v14M24 9v14" stroke="{bg}" stroke-width="2.4" stroke-linecap="round"/><rect x="11" y="9" width="4" height="8" rx="1.2" fill="{bg}"/><rect x="20" y="9" width="4" height="8" rx="1.2" fill="{bg}"/></svg>
-<div class="t">{APP_NAME}</div><div class="b"><i></i></div><div class="m" id="m">Starting…</div></div></body></html>"""
+:root{{color-scheme:{"dark" if dark else "light"}}}
+html,body{{margin:0;height:100%;background:{c["bg"]};color:{c["ink"]};
+font:15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;cursor:default}}
+.c{{box-sizing:border-box;height:100%;padding:32px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}}
+.mark{{width:60px;height:60px;margin-bottom:24px}}
+.t{{font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;font-weight:350;font-size:34px;line-height:1.15;letter-spacing:-.015em;max-width:640px}}
+.b{{margin-top:28px;width:180px;height:4px;border-radius:2px;background:{c["tint"]};overflow:hidden}}
+.b i{{display:block;width:36%;height:100%;border-radius:2px;background:{c["accent"]};animation:s 1.2s ease-in-out -.45s infinite}}
+@keyframes s{{from{{transform:translateX(-100%)}}to{{transform:translateX(280%)}}}}
+.m{{margin-top:14px;color:{c["muted"]};font-size:14px}}
+.e{{margin-top:12px;color:{c["ink2"]};font-size:16px;max-width:640px}}
+.d{{margin-top:22px;color:{c["muted"]};font-size:13px;max-width:640px;overflow-wrap:anywhere}}
+.d code{{font:12.5px "Cascadia Mono",Consolas,monospace;color:{c["ink2"]};user-select:all;cursor:text}}
+.x{{display:inline-block;width:8px;height:8px;border-radius:50%;background:{c["danger"]};margin-right:8px;vertical-align:1px}}
+</style></head><body><div class="c">{_MARK}{body}</div></body></html>"""
+
+
+def _loading_html(dark: bool) -> str:
+    return _page(dark, f'<div class="t">{APP_NAME}</div><div class="b"><i></i></div>'
+                       '<div class="m" id="m">Starting…</div>')
 
 
 def _error_html(dark: bool, message: str, log_path: Path) -> str:
-    page = _loading_html(dark).replace('<div class="b"><i></i></div>', "")
-    return page.replace('<div class="m" id="m">Starting…</div>',
-                        f'<div class="m" style="max-width:520px;text-align:center">{message}<br><br>'
-                        f'Details: {log_path}</div>')
+    return _page(dark, f'<div class="t">{html.escape(APP_NAME)} couldn’t start</div>'
+                       f'<div class="e"><span class="x"></span>{html.escape(message)}</div>'
+                       f'<div class="d">Details are in the log:<br><code>{html.escape(str(log_path))}</code></div>')
 
 
 # ---------------------------------------------------------------------------- main
@@ -242,11 +294,24 @@ def main(argv: list[str] | None = None) -> int:
     if os.environ.get("MIDICONV_DEBUG"):
         log.info("debug URL: http://127.0.0.1:%d/?token=%s", port, token)
 
-    dark = _dark_mode()
+    appearance = _appearance()
+    dark = _effective_dark(appearance)
+    log.info("appearance %s (%s)", appearance, "dark" if dark else "light")
     api = DesktopApi()
     window = webview.create_window(APP_NAME, html=_loading_html(dark), js_api=api, width=1240, height=880,
-                                   min_size=(820, 600), background_color="#0F1013" if dark else "#F5F5F2")
+                                   min_size=(820, 600), background_color=PALETTE[dark]["bg"])
     api._window = window
+    api._dark = dark
+
+    def before_show():  # on the UI thread, before the window appears: no flash of the other theme
+        form = window.native
+        try:  # pywebview re-themes the title bar from the Windows theme on every UserPreferenceChanged
+            form.update_title_bar_theme = lambda: _set_title_bar(form.Handle.ToInt64(), bool(api._dark))
+        except Exception:
+            log.debug("could not take over the title bar theme", exc_info=True)
+        _style_window(window, dark)
+
+    window.events.before_show += before_show
 
     def on_closing():
         mgr = server.manager_if_started()
@@ -260,13 +325,13 @@ def main(argv: list[str] | None = None) -> int:
     window.events.closing += on_closing
 
     def boot():
-        _style_window(window, dark)
         deadline = time.time() + 60
         while not httpd.started and time.time() < deadline:
             time.sleep(0.05)
         if not httpd.started:
             log.error("backend did not start")
-            window.load_html(_error_html(dark, "The converter engine could not start.", log_path))
+            window.load_html(_error_html(api._dark, "The converter engine did not start. Close the window and "
+                                                   "open MIDI Converter again.", log_path))
             return
         window.load_url(f"http://127.0.0.1:{port}/?token={token}")
         deadline = time.time() + 60  # wait until the page has loaded its settings
@@ -297,23 +362,50 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _style_window(window, dark: bool) -> None:
-    """App icon (instead of python's) and a dark title bar when Windows uses dark mode."""
+def _colorref(hex_color: str) -> int:
+    r, g, b = (int(hex_color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    return r | (g << 8) | (b << 16)  # 0x00BBGGRR
+
+
+def _set_title_bar(hwnd_value: int, dark: bool) -> None:
+    """Light or dark title bar; on Windows 11 also in the page's background colour, so the window
+    reads as one surface."""
+    dwm = ctypes.windll.dwmapi
+    hwnd = ctypes.c_void_p(hwnd_value)
+    flag = ctypes.c_int(1 if dark else 0)
+    if dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(flag), ctypes.sizeof(flag)) != 0:  # USE_IMMERSIVE_DARK_MODE
+        dwm.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(flag), ctypes.sizeof(flag))  # its id before Windows 10 20H1
+    caption = ctypes.c_uint(_colorref(PALETTE[dark]["bg"]))
+    dwm.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(caption), ctypes.sizeof(caption))  # CAPTION_COLOR (Windows 11)
+    backdrop = ctypes.c_int(1)  # SYSTEMBACKDROP_TYPE = none: pywebview turns on Mica in dark mode
+    dwm.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(backdrop), ctypes.sizeof(backdrop))
+    # Redraw the frame: NOSIZE | NOMOVE | NOZORDER | NOACTIVATE | FRAMECHANGED
+    ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0037)
+
+
+def _style_window(window, dark: bool, set_icon: bool = True) -> None:
+    """App icon (instead of python's), the title bar and the window background for the light or dark
+    theme. Runs on the UI thread (marshalled with Invoke when called from another thread)."""
     try:
         from System import Action  # pythonnet, loaded by pywebview's WinForms backend
+        from System.Drawing import ColorTranslator
 
         form = window.native
 
         def apply():
-            if ICON is not None:
+            if set_icon and ICON is not None:
                 from System.Drawing import Icon
 
                 form.Icon = Icon(str(ICON))
-            if dark:
-                hwnd = ctypes.c_void_p(form.Handle.ToInt64())
-                on = ctypes.c_int(1)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(on), ctypes.sizeof(on))
-                ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)  # NOSIZE|NOMOVE|NOZORDER|FRAMECHANGED
+            _set_title_bar(form.Handle.ToInt64(), dark)
+            try:  # what shows while the window resizes or the page loads
+                color = ColorTranslator.FromHtml(PALETTE[dark]["bg"])
+                form.BackColor = color
+                browser = getattr(form, "webview", None)
+                if browser is not None:
+                    browser.DefaultBackgroundColor = color
+            except Exception:
+                log.debug("could not set the window background", exc_info=True)
 
         form.Invoke(Action(apply))
     except Exception:

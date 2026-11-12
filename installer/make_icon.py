@@ -1,6 +1,6 @@
 """Draw the MIDI Converter icon (installer/assets/MIDIConverter.ico) with Pillow.
 
-Same artwork as the favicon in web/index.html: a #5B5BD6 rounded square with white piano keys
+Same artwork as the favicon in web/index.html: a #2C7567 ("Essential" teal) rounded square with white piano keys
 (32 x 32 viewBox: rx 8, four 2.4-wide round-capped strokes, two 4 x 8 black-key blocks).
 
 Each size is rendered at 8x and downsampled, so small sizes stay crisp. The ICO uses 32-bit
@@ -18,7 +18,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-ACCENT = (0x5B, 0x5B, 0xD6, 255)
+ACCENT = (0x2C, 0x75, 0x67, 255)
 WHITE = (255, 255, 255, 255)
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 PNG_MIN = 128  # entries this large or larger are stored as PNG

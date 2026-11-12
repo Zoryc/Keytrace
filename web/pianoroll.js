@@ -17,9 +17,11 @@ export function fmtTime(t, showTenths = false) {
 }
 
 export class PianoRoll {
-  constructor(el, { onSeek } = {}) {
+  // formatTip(note) -> string: optional text for the hover tip (default: pitch, velocity, length, confidence).
+  constructor(el, { onSeek, formatTip } = {}) {
     this.el = el;
     this.onSeek = onSeek || (() => {});
+    this.formatTip = formatTip || defaultTip;
     this.keys = document.createElement('canvas');
     this.canvas = document.createElement('canvas');
     this.tip = document.createElement('div');
@@ -42,7 +44,7 @@ export class PianoRoll {
     this.hover = null;
     this._raf = 0;
     this._readColors();
-    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { this._readColors(); this._drawKeys(); this.requestDraw(); });
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this.refreshColors());
     this._watchDpr();
     new ResizeObserver(() => this._resize()).observe(el);
     this._bind();
@@ -114,6 +116,13 @@ export class PianoRoll {
     const tAnchor = this.scrollX + ax / this.pxPerSec;
     this.pxPerSec = Math.min(1500, Math.max(6, this.pxPerSec * factor));
     this.scrollX = this._clampScroll(tAnchor - ax / this.pxPerSec);
+    this.requestDraw();
+  }
+
+  // Re-read the colour variables (call after the page switches theme or palette).
+  refreshColors() {
+    this._readColors();
+    this._drawKeys();
     this.requestDraw();
   }
 
@@ -350,10 +359,7 @@ export class PianoRoll {
       const n = this._hit(x, y);
       if (n !== this.hover) { this.hover = n; this.requestDraw(); }
       if (n) {
-        const dur = n[1] - n[0];
-        const conf = n[5] ?? 1;
-        this.tip.textContent = `${noteName(n[2])}  ·  velocity ${n[3]}  ·  ${dur < 1 ? Math.round(dur * 1000) + ' ms' : dur.toFixed(2) + ' s'}` +
-          (conf < 0.995 ? `  ·  ${Math.round(conf * 100)}% sure` : '');
+        this.tip.textContent = this.formatTip(n);
         this.tip.style.left = (x + this.keyW) + 'px';
         this.tip.style.top = y + 'px';
         this.tip.hidden = false;
@@ -376,6 +382,13 @@ export class PianoRoll {
     cv.addEventListener('pointercancel', end);
     cv.addEventListener('pointerleave', () => { this.tip.hidden = true; if (this.hover) { this.hover = null; this.requestDraw(); } });
   }
+}
+
+function defaultTip(n) {
+  const dur = n[1] - n[0];
+  const conf = n[5] ?? 1;
+  return `${noteName(n[2])}  ·  velocity ${n[3]}  ·  ${dur < 1 ? Math.round(dur * 1000) + ' ms' : dur.toFixed(2) + ' s'}` +
+    (conf < 0.995 ? `  ·  ${Math.round(conf * 100)}% sure` : '');
 }
 
 function lowerBound(notes, t) {
