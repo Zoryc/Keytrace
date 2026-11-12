@@ -573,8 +573,8 @@ def tokens_to_events(seq, duration: float, max_note_ms: int | None = MAX_NOTE_MS
 def _drop_idle_pedals(notes: list[Note], pedals: list[Pedal]) -> list[Pedal]:
     """Drops sustain presses during which no note sounds: they change nothing audible, and on
     noise-only stretches (room tone, hiss before or after the music) the model emits them by the
-    hundred (e.g. ~250 presses and no notes on 30 s of -70 dBFS white noise). On the clean MAESTRO
-    excerpts it removes 3 of ~920 predicted presses (pedal-onset F1 -0.06). Unlike ariautils'
+    hundred (e.g. ~250 presses and no notes on 30 s of -70 dBFS white noise). On the MAESTRO
+    excerpts it costs pedal-onset F1 0.02 (clean) to 0.13 (worst case) points. Unlike ariautils'
     remove_redundant_pedals, a note's (sounding) end does not need to fall inside the press."""
     import bisect
 
@@ -588,6 +588,7 @@ def _drop_idle_pedals(notes: list[Note], pedals: list[Pedal]) -> list[Pedal]:
     out = []
     for p in pedals:
         k = bisect.bisect_left(starts, p.end) - 1  # last sounding stretch starting before the release
-        if k >= 0 and union[k][1] > p.start:
+        # >=: a press that starts exactly as a note ends still holds it (as in pedal_extended_ends)
+        if k >= 0 and union[k][1] >= p.start:
             out.append(p)
     return out

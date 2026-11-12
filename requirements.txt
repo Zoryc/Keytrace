@@ -1,15 +1,14 @@
-# Install PyTorch with CUDA first (RTX 50-series needs CUDA 12.8+ builds):
-#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-# Transkun must be installed WITHOUT its dependencies (some have no Windows/Python 3.13 wheels):
-#   pip install --no-deps transkun==2.0.1 moduleconf==0.1.4
-numpy
-scipy
-av>=19
-soxr>=1.1
-soundfile
-pretty_midi
-mido
-mir_eval
-fastapi>=0.135
-uvicorn[standard]
-python-multipart
+# Developer environment (the installed app uses requirements-runtime.txt via scripts/setup_runtime.py).
+#
+# 1. PyTorch with CUDA (RTX 50-series needs CUDA 12.8+ builds):
+#      pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+# 2. This file:
+#      pip install -r requirements.txt
+# 3. Transkun WITHOUT its dependencies (several are training-only and have no Windows/Python 3.13 wheels):
+#      pip install --no-deps transkun==2.0.1 moduleconf==0.1.4
+# 4. Optional Aria-AMT engine (enables the Ensemble mode); see scripts/install_aria.py for the pinned
+#    packages, then download the weights:  python scripts/get_aria_weights.py
+-r requirements-runtime.txt
+
+# Benchmark and installer tooling
+pillow
