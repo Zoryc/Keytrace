@@ -672,6 +672,42 @@ async function init() {
     const job = state.recent.find((j) => j.id === m[1]);
     if (job) openJob(job); else setHash(null);
   }
+  window.midiconvReady = true;
 }
+
+// Called by the desktop shell for files opened with the app (Open with, right-click, second launch).
+window.midiconvConvertPaths = async (paths) => {
+  let first = true;
+  for (const path of paths) {
+    try {
+      const r = await fetch('/api/jobs/local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path, instrument: state.instrument, engine: engineSettings().engine,
+          engine_options: engineOptions(), output_options: outputOptions(),
+        }),
+      });
+      const job = await r.json();
+      if (!r.ok) { toast(job.detail || 'Could not open that file.'); continue; }
+      if (first) {
+        first = false;
+        closeDrawer();
+        state.job = job;
+        $('progressName').textContent = job.filename;
+        $('progressHint').textContent = '';
+        $('errorBox').hidden = true;
+        $('cancelBtn').hidden = false;
+        show('viewProgress');
+        onJobUpdate(job);
+        watch(job.id);
+      }
+    } catch {
+      toast('Could not open that file.');
+    }
+  }
+  if (paths.length > 1) toast(`${paths.length} files added`);
+  refreshRecent();
+};
 
 init();

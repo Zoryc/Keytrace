@@ -163,9 +163,10 @@ class AriaEngine(Engine):
     summary = ("EleutherAI's sequence-to-sequence piano transcriber (ICLR 2025), trained with heavy "
                "audio augmentation: notes, velocities and sustain pedal.")
     options = []
+    # Shared by all instances: a transcription temporarily patches module globals of amt.
+    _lock = threading.Lock()
 
     def __init__(self):
-        self._lock = threading.Lock()
         self._model = None
         self._transform = None
         self._tokenizer = None
@@ -572,8 +573,8 @@ def tokens_to_events(seq, duration: float, max_note_ms: int | None = MAX_NOTE_MS
 def _drop_idle_pedals(notes: list[Note], pedals: list[Pedal]) -> list[Pedal]:
     """Drops sustain presses during which no note sounds: they change nothing audible, and on
     noise-only stretches (room tone, hiss before or after the music) the model emits them by the
-    hundred (e.g. ~250 presses and no notes on 30 s of -70 dBFS white noise). Costs about 3 of 900
-    real presses on the MAESTRO excerpts (pedal F1 -0.06). Unlike ariautils'
+    hundred (e.g. ~250 presses and no notes on 30 s of -70 dBFS white noise). On the clean MAESTRO
+    excerpts it removes 3 of ~920 predicted presses (pedal-onset F1 -0.06). Unlike ariautils'
     remove_redundant_pedals, a note's (sounding) end does not need to fall inside the press."""
     import bisect
 

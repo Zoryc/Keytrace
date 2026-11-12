@@ -152,6 +152,33 @@ async def create_job(file: UploadFile = File(...), instrument: str = Form("piano
     return _job_json(job)
 
 
+@app.post("/api/jobs/local")
+async def create_local_job(request: Request):
+    """Convert a file already on this computer (Open with / right-click 'Convert to MIDI')."""
+    try:
+        body = await request.json()
+        src = Path(str(body["path"]))
+    except Exception:
+        raise HTTPException(400, "Missing file path.")
+    if not src.is_file():
+        raise HTTPException(404, f"File not found: {src.name}")
+    try:
+        job = manager().create(src.name, body.get("instrument") or "piano", body.get("engine") or None,
+                               body.get("engine_options") or {}, body.get("output_options") or {})
+    except KeyError as e:
+        raise HTTPException(400, str(e.args[0] if e.args else e))
+    except ValueError as e:
+        raise HTTPException(503, str(e))
+    dest = job.workdir / f"input{src.suffix.lower()[:10] or '.bin'}"
+    try:
+        await asyncio.to_thread(shutil.copyfile, src, dest)
+    except OSError as e:
+        shutil.rmtree(job.workdir, ignore_errors=True)
+        raise HTTPException(400, f"Could not read {src.name}: {e.strerror or e}")
+    manager().submit(job, dest)
+    return _job_json(job)
+
+
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str):
     return _job_json(_job_or_404(job_id))

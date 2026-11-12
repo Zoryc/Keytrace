@@ -163,9 +163,54 @@ def _error_html(dark: bool, message: str, log_path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------- main
+def _inbox() -> Path:
+    d = data_dir() / "inbox"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _file_args(argv: list[str] | None) -> list[str]:
+    return [str(Path(a).resolve()) for a in (argv or []) if not a.startswith("-") and Path(a).is_file()]
+
+
+def _forward_to_running_instance(paths: list[str]) -> None:
+    """Hand files to the window that is already open (it polls the inbox)."""
+    if paths:
+        tmp = _inbox() / f"{secrets.token_hex(8)}.tmp"
+        tmp.write_text(json.dumps({"paths": paths}), encoding="utf-8")
+        tmp.replace(tmp.with_suffix(".json"))
+    _focus_existing_window()
+
+
+def _watch_inbox(window, ready: threading.Event) -> None:
+    """Pick up files sent by later launches and start converting them in this window."""
+    box = _inbox()
+    for stale in box.glob("*.json"):  # requests left over from a previous session
+        stale.unlink(missing_ok=True)
+    while True:
+        time.sleep(0.5)
+        for req in sorted(box.glob("*.json"), key=lambda p: p.stat().st_mtime):
+            try:
+                paths = json.loads(req.read_text(encoding="utf-8")).get("paths", [])
+            except (OSError, ValueError):
+                paths = []
+            req.unlink(missing_ok=True)
+            if paths and ready.wait(60):
+                _convert_in_window(window, paths)
+
+
+def _convert_in_window(window, paths: list[str]) -> None:
+    try:
+        window.restore()
+    except Exception:
+        pass
+    window.evaluate_js(f"window.midiconvConvertPaths({json.dumps(paths)})")
+
+
 def main(argv: list[str] | None = None) -> int:
+    files = _file_args(argv)
     if not _acquire_single_instance():
-        _focus_existing_window()
+        _forward_to_running_instance(files)
         return 0
     log_path = _setup_logging()
     log.info("%s %s starting (python %s)", APP_NAME, __version__, sys.version.split()[0])
@@ -218,10 +263,24 @@ def main(argv: list[str] | None = None) -> int:
             window.load_html(_error_html(dark, "The converter engine could not start.", log_path))
             return
         window.load_url(f"http://127.0.0.1:{port}/?token={token}")
+        deadline = time.time() + 60  # wait until the page has loaded its settings
+        while time.time() < deadline:
+            try:
+                if window.evaluate_js("window.midiconvReady === true"):
+                    break
+            except Exception:
+                pass
+            time.sleep(0.2)
+        page_ready.set()
+        if files:
+            _convert_in_window(window, files)
 
+    page_ready = threading.Event()
+    threading.Thread(target=_watch_inbox, args=(window, page_ready), name="inbox", daemon=True).start()
     try:
-        webview.start(boot, gui="edgechromium", private_mode=False,
-                      storage_path=str(data_dir() / "webview"), debug=bool(os.environ.get("MIDICONV_DEBUG")))
+        start_kwargs = {"icon": str(ICON)} if ICON is not None else {}
+        webview.start(boot, gui="edgechromium", private_mode=False, storage_path=str(data_dir() / "webview"),
+                      debug=bool(os.environ.get("MIDICONV_DEBUG")), **start_kwargs)
     except Exception as e:
         log.exception("window failed")
         _message_box(f"The app window could not be opened ({e}).\n\nMicrosoft Edge WebView2 is required; it is "

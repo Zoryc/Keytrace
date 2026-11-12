@@ -33,7 +33,7 @@ NO_DEPS = ["transkun==2.0.1", "moduleconf==0.1.4"]
 
 # (weight of the step in the progress bar, user-facing status)
 STEPS = {
-    "torch": (0.80, "Downloading PyTorch for your graphics card (about 3 GB)"),
+    "torch": (0.80, "Installing PyTorch for your graphics card (a 2.7 GB download the first time)"),
     "packages": (0.10, "Installing audio and app components"),
     "transkun": (0.03, "Installing the piano transcription model"),
     "aria": (0.12, "Installing the Aria-AMT engine (about 450 MB)"),
@@ -106,7 +106,8 @@ def run(cmd: list[str], env: dict, watch: Path | None = None, expected: int = 0,
     code = proc.wait()
     stop.set()
     if code != 0:
-        raise RuntimeError(f"'{Path(cmd[0]).name} {cmd[1]}' failed (exit code {code}). See the details above.")
+        raise RuntimeError(f"A download or install step failed (exit code {code}). Check the internet connection "
+                           "and click Retry; 'Show details' has the full log.")
 
 
 def main() -> int:
