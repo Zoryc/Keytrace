@@ -44,7 +44,23 @@ def match_notes(ref: list[Note], est: list[Note], tol: float = ONSET_TOLERANCE) 
     return pairs
 
 
-def fuse_notes(a: list[Note], b: list[Note], rule: str = "veto_low_conf", threshold: float = 0.9) -> list[Note]:
+def posterior_at(posterior, frame_seconds: float, pitch: int, t: float, radius: int = 2) -> tuple[float, int]:
+    """Max of A's onset posterior for `pitch` within +-radius frames of time t, and the frame where it
+    peaks; (0, -1) if unknown."""
+    if posterior is None or not 21 <= pitch <= 108:
+        return 0.0, -1
+    g = int(round(t / frame_seconds))
+    lo, hi = max(0, g - radius), min(posterior.shape[0], g + radius + 1)
+    if hi <= lo:
+        return 0.0, -1
+    col = posterior[lo:hi, pitch - 21]
+    k = int(col.argmax())
+    return float(col[k]), lo + k
+
+
+def fuse_notes(a: list[Note], b: list[Note], rule: str = "veto_low_conf", threshold: float = 0.9,
+               posterior=None, frame_seconds: float = 1024 / 44100, veto_threshold: float = 0.0,
+               durations=None) -> list[Note]:
     """Rules:
       a_only / b_only    one engine alone
       union              A plus every B note A does not have
@@ -52,6 +68,9 @@ def fuse_notes(a: list[Note], b: list[Note], rule: str = "veto_low_conf", thresh
       veto_low_conf      A's notes, except those with confidence < threshold that B did not find
       rescue             A plus B-only notes with velocity >= threshold * 100
       veto_and_rescue    both of the above
+      post_rescue        A plus B-only notes where A's own onset posterior is >= threshold
+                         (B breaks ties only where A was unsure); also drops unmatched A notes
+                         with confidence < veto_threshold
     Matched notes keep A's timing, velocity and length; B-only notes keep B's."""
     if rule == "a_only":
         return list(a)
@@ -66,10 +85,21 @@ def fuse_notes(a: list[Note], b: list[Note], rule: str = "veto_low_conf", thresh
             continue
         if rule in ("veto_low_conf", "veto_and_rescue") and i not in a_matched and n.confidence < threshold:
             continue
+        if rule == "post_rescue" and i not in a_matched and n.confidence < veto_threshold:
+            continue
         out.append(n)
-    if rule in ("union", "rescue", "veto_and_rescue"):
+    if rule in ("union", "rescue", "veto_and_rescue", "post_rescue"):
         for j, n in enumerate(b):
             if j in b_matched:
+                continue
+            if rule == "post_rescue":
+                p, g = posterior_at(posterior, frame_seconds, n.pitch, n.start)
+                if p < threshold:
+                    continue
+                end = n.end
+                if durations is not None and g >= 0:  # A's own most likely key release for this onset
+                    end = n.start + max(1, int(durations[g, n.pitch - 21])) * frame_seconds
+                out.append(Note(n.start, end, n.pitch, n.velocity, round(max(p, 0.5), 3)))
                 continue
             if rule != "union" and n.velocity < threshold * 100:
                 continue

@@ -37,7 +37,8 @@ class Transcription:
     tracks: list[Track]
     duration: float
     engine: str
-    info: dict = field(default_factory=dict)
+    info: dict = field(default_factory=dict)  # small, JSON-able; shown in stats
+    aux: dict = field(default_factory=dict, repr=False)  # large engine internals (never saved), e.g. for fusion
 
     @property
     def note_count(self) -> int:

@@ -36,7 +36,7 @@ STEPS = {
     "torch": (0.80, "Downloading PyTorch for your graphics card (about 3 GB)"),
     "packages": (0.10, "Installing audio and app components"),
     "transkun": (0.03, "Installing the piano transcription model"),
-    "aria": (0.05, "Installing the Aria-AMT engine"),
+    "aria": (0.12, "Installing the Aria-AMT engine (about 450 MB)"),
     "verify": (0.02, "Checking the installation"),
 }
 
@@ -144,12 +144,13 @@ def main() -> int:
             aria = APP / "scripts" / "install_aria.py"
             if not aria.exists():
                 raise RuntimeError("install_aria.py is missing from this installation.")
-            run([py, str(aria), "--uv", uv], env)
+            run([py, str(aria), "--uv", uv], env, watch=APP / "models" / "aria-amt", expected=446_577_344, bar=bar)
             bar.finish()
 
         bar.start("verify")
         probe = ("import torch, transkun, webview, av, soxr, fastapi;"
-                 "print('CUDA' if torch.cuda.is_available() else 'CPU', torch.__version__)")
+                 + ("import amt, ariautils, safetensors;" if args.with_aria else "")
+                 + "print('CUDA' if torch.cuda.is_available() else 'CPU', torch.__version__)")
         out = subprocess.run([py, "-c", probe], env=env, capture_output=True, text=True,
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         print(out.stdout + out.stderr, flush=True)

@@ -156,8 +156,8 @@ class TranskunEngine(Engine):
             views = VIEW_SETS.get(opts.get("views", "channels"), ["orig"])
             if x.shape[0] == 1:
                 views = [v for v in views if v not in ("left", "right", "mid")] or ["orig"]
-            events = self._run(model, x, HOP_SECONDS, views, opts.get("velocity", "mode"),
-                               bool(opts.get("merge_fix", True)), progress)
+            events, (posterior, durations) = self._run(model, x, HOP_SECONDS, views, opts.get("velocity", "mode"),
+                                          bool(opts.get("merge_fix", True)), progress)
 
         notes, pedals = [], []
         for e in events:
@@ -169,7 +169,9 @@ class TranskunEngine(Engine):
         notes.sort(key=lambda n: (n.start, n.pitch))
         pedals.sort(key=lambda p: (p.start, p.cc))
         return Transcription([Track("Piano", 0, False, notes, pedals)], audio.duration, self.id,
-                             {"views": views})
+                             {"views": views},
+                             aux={"onset_posterior": posterior, "onset_duration_frames": durations,
+                                  "frame_seconds": model.hopSize / model.fs, "lowest_pitch": 21})
 
     @staticmethod
     def _view(cur, name):
@@ -211,6 +213,10 @@ class TranskunEngine(Engine):
         last_frame_idx = round(seg / hop)
         starts = list(range(0, n_sample, step))
         by_type = defaultdict(list)
+        # onset posterior on the global frame grid, keys only (88 x frames), max over windows
+        n_global = int(math.ceil((n_sample / fs - 2 * pad_begin) * fs / hop)) + 2
+        posterior = np.zeros((max(1, n_global), 88), dtype=np.float32)
+        durations = np.ones((max(1, n_global), 88), dtype=np.int32)  # frames
 
         with torch.inference_mode():
             for si, i in enumerate(starts):
@@ -221,8 +227,16 @@ class TranskunEngine(Engine):
                     cur = F.pad(cur, (0, seg - cur.shape[-1]))
                 batch = torch.stack([self._view(cur, v) for v in views], 0)  # [K, C, S]
                 frames = makeFrame(batch, hop, model.windowSize)  # [K, C, nFrame, W]
-                events, last_p = self._decode_window(model, frames, start_pos, vel_mode, last_frame_idx)
+                events, last_p, onset_p, dur = self._decode_window(model, frames, start_pos, vel_mode, last_frame_idx)
                 start_pos = [max(k - int(step / hop), 0) for k in last_p]
+                off = int(round(begin_time * fs / hop))
+                lo, hi = max(0, -off), min(onset_p.shape[0], posterior.shape[0] - off)
+                if hi > lo:  # keep, per frame and key, the window that is most sure of an onset there
+                    new_p = onset_p[lo:hi, 2:].numpy()
+                    cur_p = posterior[lo + off:hi + off]
+                    take = new_p > cur_p
+                    cur_p[take] = new_p[take]
+                    durations[lo + off:hi + off][take] = dur[lo:hi, 2:].numpy()[take]
 
                 for e in events:
                     e.start = max(e.start + begin_time, 0.0)
@@ -250,7 +264,7 @@ class TranskunEngine(Engine):
                 lst[-1].hasOffset = True
         events = [e for lst in by_type.values() for e in lst if e.hasOffset]
         with contextlib.redirect_stdout(None):  # resolveOverlapping prints '!!!!' for zero-length notes
-            return resolveOverlapping(events)
+            return resolveOverlapping(events), (posterior, durations)
 
     @staticmethod
     def _decode_window(model, frames, start_pos, vel_mode, last_frame_idx):
@@ -274,16 +288,20 @@ class TranskunEngine(Engine):
         path = crf.decode(forcedStartPos=start_pos, forward=False)  # nSym lists of (begin, end) frames
         n_sym = len(model.targetMIDIPitch)
         assert len(path) == n_sym
-        if sum(len(p) for p in path) == 0:
-            return [], [0] * n_sym
 
         # Confidence: exact posterior (semi-CRF forward-backward) that the track has an event
-        # starting within +-1 frame (+-23 ms) of the decoded onset, whatever its end.
+        # starting within +-1 frame (+-23 ms) of a given frame, whatever its end.
         _, marg, _ = forward_backward(S, S_skip)  # marg[end, begin, track]
         onset_p = marg.sum(dim=0)  # [begin, track]
+        # Most likely end frame for an event starting at each frame (gives notes added by another
+        # engine a key release estimated by this model).
+        dur = (marg.argmax(dim=0) - torch.arange(marg.shape[1], device=marg.device)[:, None]).clamp(min=1)
         onset_p = onset_p + F.pad(onset_p[1:], (0, 0, 0, 1)) + F.pad(onset_p[:-1], (0, 0, 1, 0))
         onset_p = onset_p.clamp(max=1.0).cpu()
+        dur = dur.to(torch.int32).cpu()
         del marg
+        if sum(len(p) for p in path) == 0:
+            return [], [0] * n_sym, onset_p, dur
 
         p_vel = of_val = of_pres = 0.0
         for k in range(K):
@@ -328,4 +346,4 @@ class TranskunEngine(Engine):
                 n += 1
             last_p.append(cur_last_p)
         out.sort(key=lambda t: (t.start, t.end, t.pitch))
-        return out, last_p
+        return out, last_p, onset_p, dur

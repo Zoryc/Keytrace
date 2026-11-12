@@ -52,7 +52,12 @@ def pedal_extended_ends(notes: list[Note], pedals: list[Pedal]) -> list[float]:
 
 
 def apply_output_options(tr: Transcription, opts: dict) -> Transcription:
-    tr = copy.deepcopy(tr)
+    original = tr
+    saved_aux, original.aux = original.aux, {}  # don't deep-copy large engine internals
+    try:
+        tr = copy.deepcopy(original)
+    finally:
+        original.aux = saved_aux
     min_len = max(MIN_NOTE_SECONDS, float(opts.get("min_note_ms", 0)) / 1000.0)
     for track in tr.tracks:
         notes = track.notes

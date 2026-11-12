@@ -54,10 +54,29 @@ def get_engine(instrument_id: str, engine_id: str | None = None) -> Engine:
 
 
 def _register_builtin() -> None:
+    import logging
+
     from .transkun_engine import TranskunEngine
 
-    register(Instrument("piano", "Piano", "Solo piano recordings.", default_engine="transkun"),
-             TranskunEngine())
+    transkun = TranskunEngine()
+    aria = None
+    try:  # optional second piano engine; a broken aria-amt install only hides it
+        from .aria_engine import AriaEngine
+
+        aria = AriaEngine()
+        if not aria.availability()[0]:
+            aria = None
+    except Exception as e:  # pragma: no cover
+        logging.getLogger(__name__).info("Aria-AMT engine not available: %s", e)
+
+    piano = Instrument("piano", "Piano", "Solo piano recordings.", default_engine="transkun")
+    if aria is not None:
+        from .ensemble_engine import EnsembleEngine
+
+        piano.default_engine = "ensemble"  # measured more accurate than either engine alone (bench/fusion.py)
+        register(piano, EnsembleEngine(transkun, aria), transkun, aria)
+    else:
+        register(piano, transkun)
 
 
 _register_builtin()

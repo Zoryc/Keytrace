@@ -44,6 +44,8 @@ CONFIGS = {
     "full": ("transkun", {"views": "full", "hop": "8", "merge_fix": True}),
     "vel_mean": ("transkun", {"views": "none", "hop": "8", "velocity": "mean"}),
     "vel_median": ("transkun", {"views": "none", "hop": "8", "velocity": "median"}),
+    "aria": ("aria", {}),
+    "ensemble": ("ensemble", {"views": "channels", "rescue": "0.3"}),
 }
 DEFAULT = ["base", "channels", "full"]
 
@@ -137,7 +139,11 @@ def run_engine(cfg_name, audio):
 
     tr = eng.transcribe(audio, coerce_options(eng.options, opts), Progress())
     t = tr.tracks[0]
+    run_engine.last_aux = tr.aux
     return t.notes, t.pedals
+
+
+run_engine.last_aux = {}
 
 
 def save_notes(cfg, set_name, piece_id, notes, pedals):
@@ -155,6 +161,15 @@ def load_notes(cfg, set_name, piece_id):
         return None
     d = json.loads(f.read_text())
     return ([Note(*n) for n in d["notes"]], [Pedal(s, e, c) for s, e, c in d["pedals"]])
+
+
+def load_posterior(cfg, set_name, piece_id):
+    f = RESULTS / "notes" / f"{cfg}__{set_name}__{piece_id}.post.npz"
+    if not f.exists():
+        return None
+    z = np.load(f)
+    dur = z["dur"].astype(np.int32) if "dur" in z.files else None
+    return z["post"].astype(np.float32), float(z["frame_seconds"]), dur
 
 
 def audio_for_set(set_name, piece_id):
@@ -201,8 +216,15 @@ def main():
                     if audio is None:
                         audio = load_audio(audio_for_set(set_name, m["id"]))
                     t0 = time.perf_counter()
+                    run_engine.last_aux = {}
                     est_notes, est_pedals = run_engine(cfg, audio)
                     save_notes(cfg, set_name, m["id"], est_notes, est_pedals)
+                    post = run_engine.last_aux.get("onset_posterior")
+                    if post is not None:
+                        np.savez_compressed(RESULTS / "notes" / f"{cfg}__{set_name}__{m['id']}.post.npz",
+                                            post=post.astype(np.float16),
+                                            dur=run_engine.last_aux["onset_duration_frames"].astype(np.int16),
+                                            frame_seconds=run_engine.last_aux["frame_seconds"])
                     res = score(ref_notes, ref_pedals, est_notes, est_pedals, m["seconds"])
                     res["seconds"] = time.perf_counter() - t0
                     cache.write_text(json.dumps(res))

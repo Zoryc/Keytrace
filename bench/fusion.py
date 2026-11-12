@@ -22,6 +22,7 @@ import evaluate as ev  # noqa: E402
 from midiconv.fusion import fuse_notes, match_notes  # noqa: E402
 
 THRESHOLDS = [0.0, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 0.98, 0.99, 0.995]
+POST_THRESHOLDS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1.01]
 
 
 def onset_prf(ref, est, limit):
@@ -53,14 +54,15 @@ def main():
             if a is None or b is None:
                 continue
             ref, ref_ped = ev.load_reference(ev.DATA / "maestro" / f"{m['id']}.mid", m["seconds"])
-            pieces.append((m, ref, ref_ped, a, b))
+            post = ev.load_posterior(args.a, set_name, m["id"])
+            pieces.append((m, ref, ref_ped, a, b, post))
         if not pieces:
             print(f"[{set_name}] no saved notes for both engines")
             continue
 
         # agreement analysis
         caught = missed_a = fp_a = fp_shared = 0
-        for m, ref, _, (an, _), (bn, _) in pieces:
+        for m, ref, _, (an, _), (bn, _), _post in pieces:
             lim = m["seconds"] - ev.EDGE_MARGIN
             ref_l = [n for n in ref if n.start < lim]
             an_l = [n for n in an if n.start < lim]
@@ -85,8 +87,11 @@ def main():
 
         def evaluate(rule, thr, subset):
             fs = []
-            for m, ref, _, (an, ap_), (bn, bp) in subset:
-                fused = fuse_notes(an, bn, rule=rule, threshold=thr)
+            for m, ref, _, (an, ap_), (bn, bp), post in subset:
+                kw = {}
+                if post is not None:
+                    kw = {"posterior": post[0], "frame_seconds": post[1], "durations": post[2]}
+                fused = fuse_notes(an, bn, rule=rule, threshold=thr, **kw)
                 fs.append(onset_prf(ref, fused, m["seconds"] - ev.EDGE_MARGIN))
             return np.mean(fs, axis=0)
 
@@ -94,13 +99,16 @@ def main():
         print(f"  {'A alone':34s} P {base[0] * 100:6.2f}  R {base[1] * 100:6.2f}  F1 {base[2] * 100:6.2f}")
         bonly = evaluate("b_only", 0.0, pieces)
         print(f"  {'B alone':34s} P {bonly[0] * 100:6.2f}  R {bonly[1] * 100:6.2f}  F1 {bonly[2] * 100:6.2f}")
-        for rule in ("union", "intersect", "veto_low_conf", "rescue", "veto_and_rescue"):
+        has_post = all(pc[5] is not None for pc in pieces)
+        rules = ("union", "intersect", "veto_low_conf", "rescue", "veto_and_rescue") + (("post_rescue",) if has_post else ())
+        for rule in rules:
             # leave-one-piece-out threshold selection
             prf = []
             chosen = []
             for k in range(len(pieces)):
                 train = pieces[:k] + pieces[k + 1:]
-                best = max(THRESHOLDS, key=lambda t: evaluate(rule, t, train)[2]) if rule not in ("union", "intersect") else 0.0
+                grid = POST_THRESHOLDS if rule == "post_rescue" else THRESHOLDS
+                best = max(grid, key=lambda t: evaluate(rule, t, train)[2]) if rule not in ("union", "intersect") else 0.0
                 chosen.append(best)
                 prf.append(evaluate(rule, best, [pieces[k]]))
             prf = np.mean(prf, axis=0)
