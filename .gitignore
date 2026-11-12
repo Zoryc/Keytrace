@@ -13,6 +13,8 @@ data/
 outputs/
 uploads/
 bench/work/
+bench/data/
+bench/results/
 
 # OS / editor
 .DS_Store
@@ -20,3 +22,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Logs
+*.log
