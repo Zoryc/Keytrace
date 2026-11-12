@@ -40,15 +40,12 @@ CONFIGS = {
     "stock": ("transkun", {"_stock": True}),
     "base": ("transkun", {"views": "none", "hop": "8", "merge_fix": True}),
     "nofix": ("transkun", {"views": "none", "hop": "8", "merge_fix": False}),
-    "hop4": ("transkun", {"views": "none", "hop": "4", "merge_fix": True}),
-    "hop2": ("transkun", {"views": "none", "hop": "2", "merge_fix": True}),
     "channels": ("transkun", {"views": "channels", "hop": "8", "merge_fix": True}),
     "full": ("transkun", {"views": "full", "hop": "8", "merge_fix": True}),
-    "channels_hop4": ("transkun", {"views": "channels", "hop": "4", "merge_fix": True}),
     "vel_mean": ("transkun", {"views": "none", "hop": "8", "velocity": "mean"}),
     "vel_median": ("transkun", {"views": "none", "hop": "8", "velocity": "median"}),
 }
-DEFAULT = ["stock", "base", "nofix", "hop4", "channels", "full"]
+DEFAULT = ["base", "channels", "full"]
 
 
 def load_reference(mid_path: Path, duration: float):
@@ -143,6 +140,23 @@ def run_engine(cfg_name, audio):
     return t.notes, t.pedals
 
 
+def save_notes(cfg, set_name, piece_id, notes, pedals):
+    """Keep raw estimates so fusion strategies can be evaluated offline (bench/fusion.py)."""
+    d = RESULTS / "notes"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{cfg}__{set_name}__{piece_id}.json").write_text(json.dumps({
+        "notes": [[n.start, n.end, n.pitch, n.velocity] for n in notes],
+        "pedals": [[p.start, p.end, p.cc] for p in pedals]}))
+
+
+def load_notes(cfg, set_name, piece_id):
+    f = RESULTS / "notes" / f"{cfg}__{set_name}__{piece_id}.json"
+    if not f.exists():
+        return None
+    d = json.loads(f.read_text())
+    return ([Note(s, e, p, v) for s, e, p, v in d["notes"]], [Pedal(s, e, c) for s, e, c in d["pedals"]])
+
+
 def audio_for_set(set_name, piece_id):
     src = DATA / "maestro" / f"{piece_id}.wav"
     if set_name == "clean":
@@ -156,10 +170,11 @@ def audio_for_set(set_name, piece_id):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--configs", default=",".join(DEFAULT))
-    ap.add_argument("--sets", default="clean")
+    ap.add_argument("--sets", default="clean", help="clean,mp3,phone,reverb,noise,worst or 'all'")
     ap.add_argument("--pieces", default="", help="comma list of piece ids (default: all)")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--need-notes", action="store_true", help="re-run cached entries that have no saved notes")
     args = ap.parse_args()
     if args.list:
         for k, v in CONFIGS.items():
@@ -171,7 +186,7 @@ def main():
         manifest = [m for m in manifest if m["id"] in keep]
     RESULTS.mkdir(parents=True, exist_ok=True)
     configs = [c for c in args.configs.split(",") if c]
-    sets = [s for s in args.sets.split(",") if s]
+    sets = ["clean", "mp3", "phone", "reverb", "noise", "worst"] if args.sets == "all" else [s for s in args.sets.split(",") if s]
     table = {}
     for set_name in sets:
         for m in manifest:
@@ -180,13 +195,14 @@ def main():
             for cfg in configs:
                 key = hashlib.sha1(json.dumps([cfg, CONFIGS[cfg], set_name, m["id"]]).encode()).hexdigest()[:16]
                 cache = RESULTS / f"{cfg}__{set_name}__{m['id']}__{key}.json"
-                if cache.exists() and not args.no_cache:
+                if cache.exists() and not args.no_cache and (load_notes(cfg, set_name, m["id"]) or not args.need_notes):
                     res = json.loads(cache.read_text())
                 else:
                     if audio is None:
                         audio = load_audio(audio_for_set(set_name, m["id"]))
                     t0 = time.perf_counter()
                     est_notes, est_pedals = run_engine(cfg, audio)
+                    save_notes(cfg, set_name, m["id"], est_notes, est_pedals)
                     res = score(ref_notes, ref_pedals, est_notes, est_pedals, m["seconds"])
                     res["seconds"] = time.perf_counter() - t0
                     cache.write_text(json.dumps(res))

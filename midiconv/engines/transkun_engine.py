@@ -8,7 +8,10 @@ removed pkg_resources). Compared with the CLI it adds:
   * test-time augmentation (TTA): several in-distribution views of every window are scored and
     their semi-CRF interval scores averaged before one exact Viterbi decode; velocities and
     onset/offset refinements are averaged over the views too,
-  * a configurable window hop (more overlap = each region decoded more times).
+Benchmarked on 12 MAESTRO test excerpts (bench/): the stereo views improve note-end F1 on 11/12
+pieces (+0.55) and sustain-pedal onset F1 (+1.6) at equal onset F1. Smaller window hops are NOT
+exposed: Transkun's window stitching assumes a 50 % overlap and duplicates notes otherwise
+(onset precision fell to 72 % at a 4 s hop).
 """
 from __future__ import annotations
 
@@ -30,6 +33,7 @@ from .base import Engine, Option, Progress
 
 TARGET_SR = 44100
 SEGMENT_SECONDS = 16.0  # training chunk length; positional embeddings are learned, keep it fixed
+HOP_SECONDS = 8.0  # the stitching logic assumes 50 % overlap
 
 VIEW_SETS = {
     "none": ["orig"],
@@ -84,9 +88,6 @@ class TranskunEngine(Engine):
                choices=[("none", "Single view (paper settings)"),
                         ("channels", "Stereo views (4x)"),
                         ("full", "Stereo + tone views (6x)")]),
-        Option("hop", "Window hop", "choice", "8",
-               "Distance between overlapping 16-second analysis windows. Smaller = more overlap.",
-               choices=[("8", "8 s (paper)"), ("4", "4 s"), ("2", "2 s")]),
         Option("velocity", "Velocity read-out", "choice", "mode",
                "How a note's loudness is read from the model's probability distribution.",
                choices=[("mode", "Most likely (paper)"), ("mean", "Average"), ("median", "Median")]),
@@ -155,7 +156,7 @@ class TranskunEngine(Engine):
             views = VIEW_SETS.get(opts.get("views", "channels"), ["orig"])
             if x.shape[0] == 1:
                 views = [v for v in views if v not in ("left", "right", "mid")] or ["orig"]
-            events = self._run(model, x, float(opts.get("hop", 8)), views, opts.get("velocity", "mode"),
+            events = self._run(model, x, HOP_SECONDS, views, opts.get("velocity", "mode"),
                                bool(opts.get("merge_fix", True)), progress)
 
         notes, pedals = [], []
@@ -167,7 +168,7 @@ class TranskunEngine(Engine):
         notes.sort(key=lambda n: (n.start, n.pitch))
         pedals.sort(key=lambda p: (p.start, p.cc))
         return Transcription([Track("Piano", 0, False, notes, pedals)], audio.duration, self.id,
-                             {"views": views, "hop": float(opts.get("hop", 8))})
+                             {"views": views})
 
     @staticmethod
     def _view(cur, name):
