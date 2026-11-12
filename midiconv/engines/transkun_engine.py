@@ -266,7 +266,7 @@ class TranskunEngine(Engine):
         feats = feats.view(K, *feats.shape[-3:])
         ctx = model.backbone(feats, outputIndices=torch.tensor(model.targetMIDIPitch, device=feats.device))
         S, S_skip = model.scorer(ctx)  # [T, T, K, nSym], [T-1, K, nSym]
-        crf = CRF.NeuralSemiCRFInterval(S.mean(dim=2), S_skip.mean(dim=2))
+        crf = CRF.NeuralSemiCRFInterval(S.mean(dim=2), S_skip.mean(dim=1))
         path = crf.decode(forcedStartPos=start_pos, forward=False)  # nSym lists of (begin, end) frames
         n_sym = len(model.targetMIDIPitch)
         assert len(path) == n_sym

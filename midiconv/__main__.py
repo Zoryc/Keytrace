@@ -38,8 +38,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     if args.cmd == "convert":
+        from . import pipeline
         from .engines.base import Progress
-        from .pipeline import convert
 
         src = Path(args.input)
         dst = Path(args.output) if args.output else src.with_suffix(".mid")
@@ -48,12 +48,12 @@ def main(argv=None):
             print(f"\r{frac * 100:5.1f}%  {msg or '':<60}", end="", file=sys.stderr, flush=True)
 
         with tempfile.TemporaryDirectory() as tmp:
-            res = convert(src, tmp, instrument=args.instrument, engine=args.engine,
-                          engine_options=_kv(args.set), output_options=_kv(args.out),
-                          progress=Progress(show), write_preview_audio=False)
-            shutil.copyfile(res.midi, dst)
-        print(f"\n{res.stats['notes']} notes, {res.stats['pedals']} pedal events, "
-              f"{res.stats['seconds_transcribe']} s -> {dst}", file=sys.stderr)
+            stats = pipeline.run(src, tmp, instrument=args.instrument, engine=args.engine,
+                                 engine_options=_kv(args.set), output_options=_kv(args.out),
+                                 progress=Progress(show), preview=False)
+            shutil.copyfile(Path(tmp) / pipeline.MIDI_FILE, dst)
+        print(f"\n{stats['notes']} notes, {stats['pedals']} pedal events, "
+              f"{stats['seconds_total']} s -> {dst}", file=sys.stderr)
         return 0
 
     from .server import run

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI Converter</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b5bd6'/%3E%3Cpath d='M9 9v14M14 9v14M19 9v14M24 9v14' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='11' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3Crect x='20' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" id="home" aria-label="MIDI Converter home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" class="brand-bg"/>
+        <path d="M9 9v14M14 9v14M19 9v14M24 9v14" class="brand-keys"/>
+        <rect x="11" y="9" width="4" height="8" rx="1.2" class="brand-black"/>
+        <rect x="20" y="9" width="4" height="8" rx="1.2" class="brand-black"/>
+      </svg>
+      <span>MIDI Converter</span>
+    </a>
+    <div class="topbar-right">
+      <span class="chip" id="device" hidden></span>
+      <button class="btn ghost" id="openAdvanced" aria-haspopup="dialog" aria-controls="drawer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        <span>Advanced</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- 1. Drop -->
+    <section class="card view" id="viewDrop">
+      <div class="picker" id="instrumentPicker" role="radiogroup" aria-label="Instrument"></div>
+      <label class="dropzone" id="dropzone" tabindex="0">
+        <input type="file" id="fileInput" hidden
+               accept="audio/*,video/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.aif,.aiff,.alac,.webm,.mp4,.mkv,.mov">
+        <span class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 48 48"><path d="M6 24h4l3-9 5 20 5-26 5 22 4-13 3 6h7"/></svg>
+        </span>
+        <span class="drop-title">Drop a recording to convert</span>
+        <span class="drop-sub">or <span class="link">choose a file</span> &middot; MP3, WAV, FLAC, M4A, OGG, video</span>
+      </label>
+      <button class="settings-line" id="settingsLine" type="button"></button>
+    </section>
+
+    <!-- 2. Progress -->
+    <section class="card view" id="viewProgress" hidden>
+      <div class="progress-head">
+        <div class="file-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+        </div>
+        <div class="progress-text">
+          <div class="progress-name" id="progressName"></div>
+          <div class="progress-msg" id="progressMsg">Uploading</div>
+        </div>
+        <div class="progress-pct" id="progressPct">0%</div>
+      </div>
+      <div class="bar" role="progressbar" aria-labelledby="progressMsg" aria-valuemin="0" aria-valuemax="100" id="progressBar"><span></span></div>
+      <div class="progress-actions">
+        <span class="muted small" id="progressHint"></span>
+        <button class="btn ghost" id="cancelBtn">Cancel</button>
+      </div>
+      <div class="error-box" id="errorBox" hidden>
+        <p id="errorText"></p>
+        <button class="btn" id="retryBtn">Try another file</button>
+      </div>
+    </section>
+
+    <!-- 3. Result -->
+    <section class="view" id="viewResult" hidden>
+      <div class="card result-head">
+        <div class="result-title">
+          <h1 id="resultName"></h1>
+          <p class="meta" id="resultMeta"></p>
+        </div>
+        <div class="result-actions">
+          <button class="btn ghost" id="newBtn">New file</button>
+          <a class="btn primary" id="downloadBtn" href="#" download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            Download MIDI
+          </a>
+        </div>
+      </div>
+
+      <div class="card roll-card">
+        <div class="transport">
+          <button class="play" id="playBtn" aria-label="Play">
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></svg>
+          </button>
+          <span class="time" id="timeLabel">0:00 / 0:00</span>
+          <div class="segmented" role="radiogroup" aria-label="Listen to" id="mixSeg">
+            <button role="radio" data-mix="original" aria-checked="false">Original</button>
+            <button role="radio" data-mix="both" aria-checked="true">Both</button>
+            <button role="radio" data-mix="midi" aria-checked="false">MIDI</button>
+          </div>
+          <span class="transport-spacer"></span>
+          <span class="muted small" id="pianoStatus"></span>
+          <div class="zoom">
+            <button class="icon-btn" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+            <button class="icon-btn" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></svg></button>
+          </div>
+        </div>
+        <div class="roll" id="roll"></div>
+        <div class="roll-legend muted small">
+          <span><i class="sw sw-note"></i>Key held</span>
+          <span><i class="sw sw-tail"></i>Held by pedal</span>
+          <span><i class="sw sw-pedal"></i>Sustain pedal</span>
+          <span class="legend-hint">Click to seek &middot; scroll to move &middot; Ctrl + scroll to zoom &middot; Space to play</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recent -->
+    <section class="recent" id="recent" hidden>
+      <h2>Recent</h2>
+      <ul id="recentList"></ul>
+    </section>
+  </main>
+
+  <!-- Advanced drawer -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true">
+    <header class="drawer-head">
+      <h2 id="drawerTitle">Advanced options</h2>
+      <button class="icon-btn" id="closeAdvanced" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="drawer-body">
+      <section class="opt-section">
+        <h3>Transcription</h3>
+        <p class="section-note">Used for the next conversion.</p>
+        <div id="engineOptions"></div>
+        <button class="btn subtle" id="rerunBtn" hidden>Re-convert this file with these settings</button>
+      </section>
+      <section class="opt-section">
+        <h3>MIDI file</h3>
+        <p class="section-note" id="outputNote">Applied when the file is written.</p>
+        <div id="outputOptions"></div>
+      </section>
+    </div>
+    <footer class="drawer-foot">
+      <button class="btn ghost" id="resetBtn">Reset to defaults</button>
+      <span class="muted small" id="aboutLine"></span>
+    </footer>
+  </aside>
+
+  <div class="drop-overlay" id="dropOverlay" hidden><div>Drop to convert</div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
