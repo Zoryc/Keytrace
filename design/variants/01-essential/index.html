@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI Converter</title>
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232c7567'/%3E%3Cpath d='M9.5 9v14M14.5 9v14M19.5 9v14M24.5 9v14' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // Debug banner: with &debug=1, any script error is printed in a red bar at the top of the window.
+    (function () {
+      var debug = /[?&]debug=1(&|$)/.test(location.search);
+      function show(text) {
+        var b = document.getElementById('debugBanner');
+        if (!b) {
+          b = document.createElement('div');
+          b.id = 'debugBanner';
+          b.setAttribute('role', 'alert');
+          (document.body || document.documentElement).appendChild(b);
+        }
+        var line = document.createElement('div');
+        line.textContent = text;
+        b.appendChild(line);
+      }
+      window.onerror = function (msg, src, line, col) {
+        if (!debug) return false;
+        var where = (src || '').split('/').pop() + ':' + line + ':' + col;
+        show('Error: ' + msg + '  (' + where + ')');
+        return false;
+      };
+      window.addEventListener('unhandledrejection', function (e) {
+        if (debug) show('Unhandled promise rejection: ' + (e.reason && e.reason.message || e.reason));
+      });
+    })();
+  </script>
+  <script src="../../shared/mock-data.js"></script>
+  <script src="../../shared/roll.js"></script>
+</head>
+<body>
+  <div class="app" id="app" data-view="home">
+    <header class="topbar">
+      <a class="brand" href="#" id="brand" aria-label="MIDI Converter, start over">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="9"/>
+          <path d="M9.5 9v14M14.5 9v14M19.5 9v14M24.5 9v14"/>
+        </svg>
+        <span>MIDI Converter</span>
+      </a>
+      <div class="gpu" id="gpu" tabindex="0">
+        <span class="gpu-dot" aria-hidden="true"></span>
+        <span id="gpuName">RTX 5070 Ti</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- Home -->
+      <section class="view view-home" id="viewHome" aria-label="Convert a recording">
+        <div class="drop" id="drop" role="button" tabindex="0" aria-describedby="dropFormats">
+          <input type="file" id="fileInput" hidden
+                 accept="audio/*,video/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.oga,.opus,.wma,.aif,.aiff,.webm,.mp4,.mkv,.mov">
+          <div class="drop-inner">
+            <span class="drop-icon" aria-hidden="true">
+              <svg viewBox="0 0 48 48"><path class="arrow" d="M24 9v20M16 21l8 8 8-8"/><path d="M10 31v4a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4v-4"/></svg>
+            </span>
+            <h1 class="drop-title">Drop a recording here</h1>
+            <p class="drop-sub">or <span class="drop-link">choose a file</span></p>
+            <p class="drop-formats" id="dropFormats">MP3 · WAV · FLAC · M4A · OGG · video</p>
+          </div>
+          <div class="drop-release" aria-hidden="true">Let go to convert</div>
+        </div>
+
+        <div class="setline">
+          <div class="instrument">
+            <span class="setline-label" id="instLabel">Instrument</span>
+            <button class="inst-btn" id="instBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-describedby="instLabel">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M8 5v14M12 5v14M16 5v14"/><path class="fill" d="M6.6 5h2.8v7.5H6.6zM14.6 5h2.8v7.5h-2.8z"/></svg>
+              <span>Piano</span>
+              <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+            </button>
+            <span class="soon">More instruments soon</span>
+            <div class="menu" id="instMenu" role="menu" hidden>
+              <button type="button" role="menuitemradio" aria-checked="true" class="menu-item">
+                <span><b>Piano</b><small>Solo piano recordings</small></span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+              </button>
+              <div class="menu-item soon-item" role="menuitem" aria-disabled="true">
+                <span><b>More instruments</b><small>Coming soon</small></span>
+              </div>
+            </div>
+          </div>
+          <div class="setline-right">
+            <span class="engine-sum" id="engineSum"></span>
+            <button class="link-btn" id="optsHome" type="button" aria-haspopup="dialog">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
+              Options
+            </button>
+          </div>
+        </div>
+
+        <section class="recent" id="recent" aria-labelledby="recentTitle">
+          <div class="recent-head">
+            <h2 id="recentTitle">Recent conversions</h2>
+            <button class="link-btn recent-more" id="recentMore" type="button" aria-expanded="false" aria-controls="recentList">Show all</button>
+          </div>
+          <ul class="recent-list" id="recentList"></ul>
+        </section>
+      </section>
+
+      <!-- Progress -->
+      <section class="view view-progress" id="viewProgress" hidden aria-label="Converting">
+        <div class="prog">
+          <div class="ring" id="ring" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="46" aria-labelledby="progTitle">
+            <svg viewBox="0 0 240 240" aria-hidden="true">
+              <circle class="ring-track" cx="120" cy="120" r="108"/>
+              <circle class="ring-fill" id="ringFill" cx="120" cy="120" r="108"/>
+            </svg>
+            <div class="ring-label" aria-hidden="true"><span id="pct">46</span><small>%</small></div>
+          </div>
+          <h1 class="prog-title" id="progTitle">Listening to your recording…</h1>
+          <p class="prog-sub"><span class="prog-file" id="progFile"></span><span class="sep" aria-hidden="true">·</span><span id="progEta">About 14 seconds left</span></p>
+          <ol class="stages" id="stages" aria-label="Steps"></ol>
+          <p class="prog-detail" id="progDetail" aria-live="polite">Transcribing window 5 of 9</p>
+          <button class="btn ghost" id="cancelBtn" type="button">Cancel</button>
+        </div>
+      </section>
+
+      <!-- Result -->
+      <section class="view view-result" id="viewResult" hidden aria-label="Result">
+        <div class="res-head">
+          <p class="eyebrow">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M7.8 12.4l2.9 2.9 5.6-5.8"/></svg>
+            Your MIDI file is ready
+          </p>
+          <h1 class="res-title" id="resTitle"></h1>
+          <p class="res-stats" id="resStats"></p>
+          <button class="save" id="saveBtn" type="button">
+            <svg class="i-save" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>
+            <svg class="i-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+            <span id="saveLabel">Save MIDI</span>
+          </button>
+          <div class="res-links">
+            <button class="link-btn" id="newBtn" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              Convert another
+            </button>
+            <span class="dotsep" aria-hidden="true"></span>
+            <button class="link-btn" id="optsResult" type="button" aria-haspopup="dialog">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
+              Options
+            </button>
+          </div>
+        </div>
+
+        <div class="preview" aria-label="Preview">
+          <div class="preview-bar">
+            <button class="play" id="playBtn" type="button" aria-pressed="false">
+              <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4l-10-6.2A.8.8 0 0 0 8 5.8z"/></svg>
+              <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5.5" width="3.6" height="13" rx="1"/><rect x="13.4" y="5.5" width="3.6" height="13" rx="1"/></svg>
+              <span id="playLabel">Play preview</span>
+            </button>
+            <span class="time" id="time" aria-live="off">0:12 / 1:00</span>
+            <div class="mix-wrap">
+              <span class="mix-label" id="mixLabel">Listen to</span>
+              <div class="seg seg-mix" role="radiogroup" aria-labelledby="mixLabel" id="mix">
+                <button type="button" role="radio" data-mix="original" aria-checked="false" tabindex="-1" title="Hear the recording">Original</button>
+                <button type="button" role="radio" data-mix="both" aria-checked="true" tabindex="0" title="Hear the recording and the MIDI together">Both</button>
+                <button type="button" role="radio" data-mix="midi" aria-checked="false" tabindex="-1" title="Hear the MIDI on a grand piano">MIDI</button>
+              </div>
+            </div>
+            <span class="spacer"></span>
+            <div class="zoom" role="group" aria-label="Zoom">
+              <button class="icon-btn" id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+              <button class="icon-btn" id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
+            </div>
+          </div>
+          <div class="roll" id="roll"></div>
+          <p class="preview-hint">Hover a note to see what it is · Click to jump there · Space plays and pauses</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Options -->
+  <div class="scrim" id="scrim" hidden></div>
+  <section class="dialog" id="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" hidden>
+    <header class="dlg-head">
+      <h2 id="dlgTitle">Options</h2>
+      <button class="icon-btn" id="dlgClose" type="button" aria-label="Close options"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
+    </header>
+    <div class="dlg-body" id="dlgBody"></div>
+    <footer class="dlg-foot">
+      <button class="link-btn more-btn" id="moreBtn" type="button" aria-expanded="false" aria-controls="dlgBody">
+        <span id="moreLabel">More settings</span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+      </button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="resetBtn" type="button">Reset to defaults</button>
+      <button class="btn primary" id="doneBtn" type="button">Done</button>
+    </footer>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <nav class="switcher" id="switcher" aria-label="Prototype states">
+    <span class="switcher-label">State</span>
+    <button type="button" data-state="home">home</button>
+    <button type="button" data-state="progress">progress</button>
+    <button type="button" data-state="result">result</button>
+    <button type="button" data-state="advanced">advanced</button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>

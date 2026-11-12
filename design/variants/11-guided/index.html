@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI Converter</title>
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230e7a68'/%3E%3Cpath d='M9 9v14M14 9v14M19 9v14M24 9v14' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='11' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3Crect x='20' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // Errors become visible with ?debug=1 (set up before anything else runs).
+    (function () {
+      var debug = /[?&]debug=1\b/.test(location.search);
+      window.onerror = function (msg, src, line, col) {
+        if (!debug) return false;
+        var b = document.getElementById('debugBanner');
+        var text = 'Error: ' + msg + (src ? '  (' + String(src).split('/').pop() + ':' + line + ':' + col + ')' : '');
+        if (!b) { document.addEventListener('DOMContentLoaded', function () { window.onerror(msg, src, line, col); }); return false; }
+        b.hidden = false;
+        b.textContent = (b.textContent ? b.textContent + '\n' : '') + text;
+        return false;
+      };
+    })();
+  </script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============ Top bar ============ -->
+  <header class="topbar">
+    <a class="brand" href="#" id="brandHome" aria-label="MIDI Converter, start over">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" class="bm-bg"/>
+        <path d="M9 9v14M14 9v14M19 9v14M24 9v14" class="bm-keys"/>
+        <rect x="11" y="9" width="4" height="8" rx="1.2" class="bm-black"/>
+        <rect x="20" y="9" width="4" height="8" rx="1.2" class="bm-black"/>
+      </svg>
+      <span class="brand-name">MIDI Converter</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <span class="gpu" id="gpuChip" title="Running on NVIDIA GeForce RTX 5070 Ti (16 GB)">
+      <span class="gpu-dot" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+      <span class="gpu-text"><span class="gpu-name">RTX 5070 Ti</span><span class="gpu-state"> · ready</span></span>
+    </span>
+    <button class="btn ghost sm" id="openAdvanced" aria-haspopup="dialog" aria-controls="drawer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      <span class="hide-sm">Advanced options</span><span class="show-sm">Advanced</span>
+    </button>
+  </header>
+
+  <!-- ============ Stepper ============ -->
+  <nav class="stepper" aria-label="Conversion steps">
+    <ol class="steps" id="steps">
+      <li class="st" data-step="1">
+        <button class="st-btn" type="button" data-goto="1">
+          <span class="st-dot"><span class="st-num">1</span><svg class="st-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9"/></svg></span>
+          <span class="st-text"><span class="st-title">Choose recording</span><span class="st-sub" id="sub1">MP3, WAV, video…</span></span>
+        </button>
+      </li>
+      <li class="st-line" data-after="1" aria-hidden="true"></li>
+      <li class="st" data-step="2">
+        <button class="st-btn" type="button" data-goto="2">
+          <span class="st-dot"><span class="st-num">2</span><svg class="st-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9"/></svg></span>
+          <span class="st-text"><span class="st-title">Choose quality</span><span class="st-sub" id="sub2">Best quality</span></span>
+        </button>
+      </li>
+      <li class="st-line" data-after="2" aria-hidden="true"></li>
+      <li class="st" data-step="3">
+        <button class="st-btn" type="button" data-goto="3">
+          <span class="st-dot"><span class="st-ring" id="stRing"></span><span class="st-num">3</span><svg class="st-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9"/></svg></span>
+          <span class="st-text"><span class="st-title">Converting</span><span class="st-sub" id="sub3">About 12 s</span></span>
+        </button>
+      </li>
+      <li class="st-line" data-after="3" aria-hidden="true"></li>
+      <li class="st" data-step="4">
+        <button class="st-btn" type="button" data-goto="4">
+          <span class="st-dot"><span class="st-num">4</span><svg class="st-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9"/></svg></span>
+          <span class="st-text"><span class="st-title">Review &amp; save</span><span class="st-sub" id="sub4">Listen, then save</span></span>
+        </button>
+      </li>
+    </ol>
+  </nav>
+
+  <!-- ============ Stage ============ -->
+  <main class="stage" id="stage">
+
+    <!-- ---------- Step 1: Choose recording ---------- -->
+    <section class="step" id="step1" aria-labelledby="h1" hidden>
+      <div class="home-grid">
+        <div class="home-main">
+          <header class="step-head">
+            <p class="eyebrow">Step 1 of 4</p>
+            <h1 id="h1">Choose a recording</h1>
+            <p class="lead">Pick a recording of solo piano. MIDI Converter listens to it and writes down every note it hears, so you can edit it, play it back or turn it into sheet music.</p>
+          </header>
+
+          <div class="field">
+            <div class="field-label" id="instLabel">What is playing?</div>
+            <div class="inst-row" role="radiogroup" aria-labelledby="instLabel">
+              <button class="inst" type="button" role="radio" aria-checked="true" id="instPiano">
+                <span class="inst-ic" aria-hidden="true">
+                  <svg viewBox="0 0 32 32"><rect x="3.5" y="7.5" width="25" height="17" rx="3"/><path d="M9.5 7.5v17M15.5 7.5v17M21.5 7.5v17"/><rect x="7.6" y="7.5" width="3.8" height="9" rx="1" class="fill"/><rect x="13.6" y="7.5" width="3.8" height="9" rx="1" class="fill"/><rect x="19.6" y="7.5" width="3.8" height="9" rx="1" class="fill"/></svg>
+                </span>
+                <span class="inst-text"><b>Piano</b><small>Solo piano recordings</small></span>
+                <span class="radio-dot" aria-hidden="true"></span>
+              </button>
+              <div class="inst soon" aria-disabled="true">
+                <span class="inst-ic" aria-hidden="true">
+                  <svg viewBox="0 0 32 32"><path d="M16 9v14M9 16h14"/></svg>
+                </span>
+                <span class="inst-text"><b>More instruments</b><small>Coming soon. Piano is the first one.</small></span>
+                <span class="soon-tag">Soon</span>
+              </div>
+            </div>
+          </div>
+
+          <button class="dropzone" id="dropzone" type="button" aria-describedby="dropFormats">
+            <span class="dz-art" aria-hidden="true">
+              <svg viewBox="0 0 120 64">
+                <rect x="6" y="10" width="40" height="44" rx="7" class="dz-card"/>
+                <path d="M14 34h3l3-9 4 18 4-22 4 18 3-8 2 3h3" class="dz-wave"/>
+                <path d="M54 32h14M63 26l6 6-6 6" class="dz-arrow"/>
+                <rect x="76" y="10" width="40" height="44" rx="7" class="dz-card"/>
+                <path d="M86 16v32M96 16v32M106 16v32" class="dz-keys"/>
+                <rect x="83" y="16" width="5" height="18" rx="1.5" class="dz-black"/>
+                <rect x="93" y="16" width="5" height="18" rx="1.5" class="dz-black"/>
+                <rect x="103" y="16" width="5" height="18" rx="1.5" class="dz-black"/>
+              </svg>
+            </span>
+            <span class="dz-title">Drop a recording here</span>
+            <span class="dz-sub">or <span class="dz-link">choose a file</span> from your computer</span>
+            <span class="dz-formats" id="dropFormats">
+              <span>MP3</span><span>WAV</span><span>FLAC</span><span>M4A</span><span>OGG</span><span>Video</span>
+            </span>
+          </button>
+
+          <ul class="tips" aria-label="Good to know">
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+              <span><b>Any length</b> A 2-minute piece takes about 25 seconds.</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
+              <span><b>Phone recordings work</b> 97.8% of notes found in our tests.</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+              <span><b>Stays on this PC</b> Nothing is uploaded anywhere.</span>
+            </li>
+          </ul>
+        </div>
+
+        <aside class="card recent" aria-labelledby="recentTitle">
+          <div class="recent-head">
+            <h2 id="recentTitle">Recent conversions</h2>
+            <span class="count" id="recentCount"></span>
+          </div>
+          <ul class="recent-list" id="recentList"></ul>
+          <p class="recent-empty" id="recentEmpty" hidden>Files you convert will show up here, so you can open them again later.</p>
+          <div class="recent-foot">
+            <p>Click a finished file to listen to it again or save its MIDI.</p>
+            <div class="folder">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+              <span class="folder-text"><small>Your MIDI files are saved in</small><b>Music › MIDI Converter</b></span>
+              <button class="link-btn" type="button" data-action="open-folder">Open folder</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ---------- Step 2: Choose quality ---------- -->
+    <section class="step" id="step2" aria-labelledby="h2" hidden>
+      <header class="step-head with-aside">
+        <div>
+          <p class="eyebrow">Step 2 of 4</p>
+          <h1 id="h2">Choose quality</h1>
+          <p class="lead">Choose how carefully MIDI Converter listens. Best quality misses the fewest notes.</p>
+        </div>
+        <div class="file-pill" id="filePill2">
+          <span class="fp-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></span>
+          <span class="fp-text"><b class="fp-name" data-bind="fileName"></b><small data-bind="fileMeta"></small></span>
+          <button class="link-btn" type="button" data-action="change-file">Change</button>
+        </div>
+      </header>
+
+      <div class="presets" id="presets" role="radiogroup" aria-label="Quality">
+        <button class="preset" type="button" role="radio" data-preset="best" aria-checked="true">
+          <span class="pr-top">
+            <span class="pr-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.6 6.1.6-4.6 4 1.4 6-5.3-3.2-5.3 3.2 1.4-6-4.6-4 6.1-.6z"/></svg></span>
+            <span class="badge">Recommended</span>
+            <span class="radio-dot" aria-hidden="true"></span>
+          </span>
+          <span class="pr-title">Best quality</span>
+          <span class="pr-desc">Two AI models listen and compare notes. Catches the most notes, even very soft ones.</span>
+          <span class="meters">
+            <span class="meter"><span class="m-label">Accuracy</span><span class="m-dots" data-v="5" aria-label="5 out of 5"></span></span>
+            <span class="meter"><span class="m-label">Speed</span><span class="m-dots" data-v="3" aria-label="3 out of 5"></span></span>
+          </span>
+          <span class="pr-foot"><b data-bind="bestTime">About 12 s</b><small>about 25 s per 2 min of music · Ensemble (Transkun + Aria)</small></span>
+        </button>
+
+        <button class="preset" type="button" role="radio" data-preset="fast" aria-checked="false">
+          <span class="pr-top">
+            <span class="pr-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13.5 2.5L5 13.5h6l-1 8 8.5-11h-6z"/></svg></span>
+            <span class="radio-dot" aria-hidden="true"></span>
+          </span>
+          <span class="pr-title">Faster</span>
+          <span class="pr-desc">One AI model listens. About 4× faster and almost as accurate. Handy for long recordings.</span>
+          <span class="meters">
+            <span class="meter"><span class="m-label">Accuracy</span><span class="m-dots" data-v="4" aria-label="4 out of 5"></span></span>
+            <span class="meter"><span class="m-label">Speed</span><span class="m-dots" data-v="5" aria-label="5 out of 5"></span></span>
+          </span>
+          <span class="pr-foot"><b data-bind="fastTime">About 3 s</b><small>about 6 s per 2 min of music · Transkun V2 only</small></span>
+        </button>
+
+        <button class="preset" type="button" role="radio" data-preset="custom" aria-checked="false" aria-controls="customPanel">
+          <span class="pr-top">
+            <span class="pr-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></span>
+            <span class="radio-dot" aria-hidden="true"></span>
+          </span>
+          <span class="pr-title">Custom…</span>
+          <span class="pr-desc">Pick the engine and every setting yourself. For when you want to experiment.</span>
+          <span class="meters">
+            <span class="meter wide"><span class="m-label">Shows all settings: engine, analysis, pedal, dynamics, tempo</span></span>
+          </span>
+          <span class="pr-foot"><b data-bind="customTime">Depends on settings</b><small data-bind="customSummary">Starts from Best quality</small></span>
+        </button>
+      </div>
+
+      <!-- Custom: every option -->
+      <div class="custom-panel card" id="customPanel" hidden>
+        <div class="cp-bar">
+          <span class="cp-sum"><span class="muted">Your settings:</span> <b id="cpSummary">Ensemble · Stereo views 4x</b> <span class="muted" id="cpTime">· about 12 s</span></span>
+          <button class="btn ghost sm" type="button" data-action="reset">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/></svg>
+            Reset to defaults
+          </button>
+        </div>
+        <div class="cp-cols">
+          <section class="cp-col" aria-labelledby="cpListen">
+            <header class="cp-head">
+              <h2 id="cpListen">How it listens</h2>
+              <p>Used for this conversion.</p>
+            </header>
+            <div id="engineOptions"></div>
+          </section>
+          <section class="cp-col" aria-labelledby="cpFile">
+            <header class="cp-head">
+              <h2 id="cpFile">What goes in the MIDI file</h2>
+              <p class="instant"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2.5L5 13.5h6l-1 8 8.5-11h-6z"/></svg>Applies instantly, even after converting.</p>
+            </header>
+            <div id="outputOptions"></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="preset-note" id="presetNote">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.4"/></svg>
+        <p><b>Not sure?</b> Pick Best quality. You can still change pedal, dynamics and tempo on the last step without converting again.</p>
+        <label class="check">
+          <input type="checkbox" id="skipQuality">
+          <span class="check-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>
+          <span>Remember my choice and skip this step next time</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- ---------- Step 3: Converting ---------- -->
+    <section class="step" id="step3" aria-labelledby="h3" hidden>
+      <header class="step-head">
+        <p class="eyebrow">Step 3 of 4</p>
+        <h1 id="h3">Converting</h1>
+        <p class="lead">The AI listens to your recording piece by piece and writes down each note and pedal press. It all happens on this PC.</p>
+      </header>
+
+      <div class="convert-grid">
+        <div class="card convert-main">
+          <div class="cv-file">
+            <span class="fp-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></span>
+            <span class="fp-text"><b class="fp-name" data-bind="fileName"></b><small data-bind="presetLine"></small></span>
+          </div>
+
+          <div class="cv-figure">
+            <span class="cv-pct" id="cvPct">46%</span>
+            <span class="cv-msg">
+              <b id="cvMsg">Transcribing window 5 of 9</b>
+              <small id="cvEta">About 14 s left</small>
+            </span>
+          </div>
+          <div class="bar" role="progressbar" aria-label="Overall progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="46" id="cvBar"><span id="cvBarFill"></span></div>
+
+          <div class="windows">
+            <div class="windows-head">
+              <span class="field-label">Your recording, in listening windows</span>
+              <span class="muted small" id="cvWinCount">4 of 9 done</span>
+            </div>
+            <div class="wave" id="wave" aria-hidden="true"><canvas id="waveCanvas"></canvas></div>
+            <div class="wave-axis" aria-hidden="true"><span>0:00</span><span>0:30</span><span>1:00</span></div>
+          </div>
+        </div>
+
+        <div class="card stages-card">
+          <h2 class="card-title">What is happening</h2>
+          <ol class="stages" id="stages"></ol>
+        </div>
+      </div>
+
+      <aside class="explainer" aria-labelledby="whatMidi">
+        <span class="ex-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/></svg></span>
+        <div>
+          <h2 id="whatMidi">While you wait: what is a MIDI file?</h2>
+          <p>It is not a sound recording. It is a list of which keys were pressed, when, for how long and how hard, plus the pedals. Any music app can play it with any piano sound, or show it as sheet music.</p>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ---------- Step 4: Review & save ---------- -->
+    <section class="step" id="step4" aria-labelledby="h4" hidden>
+      <header class="step-head with-aside">
+        <div>
+          <p class="eyebrow">Step 4 of 4</p>
+          <h1 id="h4">Review &amp; save</h1>
+          <p class="lead">Play it back and compare it with your recording. If it sounds right, save it.</p>
+        </div>
+        <div class="result-pill" id="resultPill">
+          <span class="rp-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>
+          <span class="rp-text">
+            <b class="fp-name" data-bind="fileName"></b>
+            <span class="rp-stats">
+              <span id="stDuration">1:00</span><i aria-hidden="true">·</i>
+              <span><span id="stNotes">620</span> notes</span><i aria-hidden="true">·</i>
+              <span id="stPedals">53 pedal presses</span><i aria-hidden="true">·</i>
+              <span id="stEngine">Ensemble</span><i aria-hidden="true">·</i>
+              <span>converted in <span id="stTime">11.6 s</span></span>
+            </span>
+          </span>
+        </div>
+      </header>
+
+      <div class="review-grid">
+        <div class="card roll-card">
+          <div class="transport">
+            <button class="play" id="playBtn" type="button" aria-label="Play" title="Play or pause (Space)">
+              <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+              <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5h3.2v14H7.5zM13.3 5h3.2v14h-3.2z"/></svg>
+            </button>
+            <span class="time" id="timeLabel">0:00 / 1:00</span>
+            <div class="listen">
+              <span class="listen-label" id="listenLabel">Listen to</span>
+              <div class="segmented" role="radiogroup" aria-labelledby="listenLabel" id="mixSeg">
+                <button type="button" role="radio" data-mix="original" aria-checked="false">Original</button>
+                <button type="button" role="radio" data-mix="both" aria-checked="true">Both</button>
+                <button type="button" role="radio" data-mix="midi" aria-checked="false">MIDI</button>
+              </div>
+            </div>
+            <span class="transport-spacer"></span>
+            <div class="zoom" role="group" aria-label="Zoom">
+              <button class="icon-btn" id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20M7.5 10.5h6"/></svg></button>
+              <button class="icon-btn" id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20M7.5 10.5h6M10.5 7.5v6"/></svg></button>
+            </div>
+          </div>
+          <div class="roll" id="roll" aria-label="Piano roll. Hover a note for details, click to jump."></div>
+          <div class="roll-foot">
+            <span class="lg"><i class="sw sw-note"></i>Key held</span>
+            <span class="lg"><i class="sw sw-tail"></i>Held by pedal</span>
+            <span class="lg"><i class="sw sw-pedal"></i>Sustain pedal</span>
+            <span class="lg"><i class="sw sw-vel"></i>Darker = louder</span>
+            <span class="roll-hint" id="mixHint">You hear: recording and MIDI together</span>
+            <button class="link-btn jump-contents" type="button" data-action="to-contents">What's in your MIDI file<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
+          </div>
+        </div>
+
+        <aside class="card contents" aria-labelledby="contentsTitle">
+          <h2 class="card-title" id="contentsTitle">What's in your MIDI file</h2>
+          <p class="instant"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2.5L5 13.5h6l-1 8 8.5-11h-6z"/></svg>Changes apply instantly.</p>
+          <div class="contents-list" id="contentsList"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ Action bar ============ -->
+  <footer class="actionbar" id="actionbar">
+    <div class="ab-left" id="abLeft"></div>
+    <div class="ab-right" id="abRight"></div>
+  </footer>
+</div>
+
+<!-- ============ Advanced drawer ============ -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true" inert>
+  <header class="drawer-head">
+    <div>
+      <h2 id="drawerTitle">Advanced options</h2>
+      <p class="muted small">Every setting MIDI Converter has. The defaults measured best.</p>
+    </div>
+    <button class="icon-btn" id="closeDrawer" type="button" aria-label="Close advanced options"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </header>
+  <div class="drawer-body">
+    <section class="dr-sec">
+      <h3>How it listens</h3>
+      <p class="muted small" id="drEngineNote">Used for the next conversion.</p>
+      <div id="drEngineOptions"></div>
+      <button class="btn subtle sm" type="button" id="reconvertBtn" hidden>Convert this file again with these settings</button>
+    </section>
+    <section class="dr-sec">
+      <h3>What goes in the MIDI file</h3>
+      <p class="instant small"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2.5L5 13.5h6l-1 8 8.5-11h-6z"/></svg>Apply instantly, even after converting.</p>
+      <div id="drOutputOptions"></div>
+    </section>
+  </div>
+  <footer class="drawer-foot">
+    <button class="btn ghost sm" type="button" data-action="reset">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/></svg>
+      Reset to defaults
+    </button>
+    <span class="muted small" id="aboutLine">MIDI Converter 0.1.0</span>
+  </footer>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button class="toast-action" id="toastAction" type="button" hidden></button></div>
+
+<nav class="switcher" id="switcher" aria-label="Prototype state switcher">
+  <span>State</span>
+  <a href="?state=home" data-state="home">home</a>
+  <a href="?state=progress" data-state="progress">progress</a>
+  <a href="?state=result" data-state="result">result</a>
+  <a href="?state=advanced" data-state="advanced">advanced</a>
+</nav>
+<div class="debug-banner" id="debugBanner" role="alert" hidden></div>
+
+<script src="../../shared/mock-data.js"></script>
+<script src="../../shared/roll.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

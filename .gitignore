@@ -32,3 +32,6 @@ web/vendor/piano/
 # Installer build output
 installer/build/
 installer/dist/
+
+# Design contact sheets (regenerate from the prototypes)
+design/_previews/

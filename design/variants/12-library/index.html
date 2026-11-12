@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI Converter · Library</title>
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23b4235a'/%3E%3Crect x='7' y='9' width='8' height='3' rx='1.5' fill='white'/%3E%3Crect x='12' y='15' width='13' height='3' rx='1.5' fill='white'/%3E%3Crect x='9' y='21' width='6' height='3' rx='1.5' fill='white' opacity='.7'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="debug-banner" id="debugBanner" role="alert" hidden></div>
+  <script>
+    // Errors become visible with &debug=1 (installed before anything else runs).
+    (function () {
+      var debug = /[?&]debug=1\b/.test(location.search);
+      function show(msg) {
+        if (!debug) return;
+        var b = document.getElementById('debugBanner');
+        if (!b) return;
+        b.hidden = false;
+        var line = document.createElement('div');
+        line.textContent = msg;
+        b.appendChild(line);
+      }
+      window.onerror = function (msg, src, line, col, err) {
+        show('Error: ' + msg + ' (' + String(src || '').split('/').pop() + ':' + line + ':' + col + ')' + (err && err.stack ? '\n' + err.stack.split('\n').slice(1, 3).join('\n') : ''));
+      };
+      window.addEventListener('unhandledrejection', function (e) { show('Unhandled promise: ' + (e.reason && e.reason.message || e.reason)); });
+    })();
+  </script>
+
+  <div class="app" id="app">
+    <!-- ======================================================= title bar -->
+    <header class="titlebar">
+      <a class="brand" href="#" id="brand" aria-label="MIDI Converter, add recordings">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="var(--accent)"/>
+          <rect x="7" y="9" width="8" height="3" rx="1.5" fill="#fff"/>
+          <rect x="12" y="15" width="13" height="3" rx="1.5" fill="#fff"/>
+          <rect x="9" y="21" width="6" height="3" rx="1.5" fill="#fff" opacity=".7"/>
+        </svg>
+        <span class="brand-name">MIDI Converter</span>
+      </a>
+      <label class="search">
+        <i data-icon="search"></i>
+        <input id="search" type="search" placeholder="Search your library" aria-label="Search conversions" autocomplete="off" spellcheck="false">
+        <kbd>Ctrl F</kbd>
+      </label>
+      <span class="tb-spacer"></span>
+      <span class="gpu" id="gpu" title="NVIDIA GeForce RTX 5070 Ti · 16 GB · CUDA">
+        <i data-icon="chip"></i>
+        <span class="gpu-name">RTX 5070 Ti</span>
+        <span class="gpu-state" id="gpuState"><span class="dot"></span><span id="gpuText">Ready</span></span>
+      </span>
+      <button class="btn primary" id="newFile" title="Add one or more recordings (Ctrl+O)"><i data-icon="plus"></i><span>New file</span></button>
+    </header>
+
+    <!-- ======================================================= sidebar -->
+    <nav class="sidebar" id="sidebar" aria-label="Library">
+      <div class="nav-scroll">
+        <button class="nav-item nav-add" data-nav="add"><i data-icon="add-file"></i><span class="nav-label">Add recordings</span></button>
+
+        <div class="nav-group">
+          <h2 class="nav-h">Library</h2>
+          <button class="nav-item" data-nav="all"><i data-icon="library"></i><span class="nav-label">All conversions</span><span class="nav-count" data-count="all"></span></button>
+          <button class="nav-item" data-nav="running"><i data-icon="running"></i><span class="nav-label">Running</span><span class="nav-count" data-count="running"></span></button>
+          <button class="nav-item" data-nav="failed"><i data-icon="alert"></i><span class="nav-label">Failed</span><span class="nav-count" data-count="failed"></span></button>
+          <button class="nav-item" data-nav="fav"><i data-icon="star"></i><span class="nav-label">Favourites</span><span class="nav-count" data-count="fav"></span></button>
+        </div>
+
+        <div class="nav-group">
+          <h2 class="nav-h">Collections</h2>
+          <button class="nav-item" data-nav="c:recital"><i data-icon="folder" class="coll-ic c-recital"></i><span class="nav-label">December recital</span><span class="nav-count" data-count="c:recital"></span></button>
+          <button class="nav-item" data-nav="c:lessons"><i data-icon="folder" class="coll-ic c-lessons"></i><span class="nav-label">Lessons</span><span class="nav-count" data-count="c:lessons"></span></button>
+          <button class="nav-item nav-new" id="newCollection"><i data-icon="plus"></i><span class="nav-label">New collection</span></button>
+        </div>
+      </div>
+
+      <section class="queue" id="queue" aria-label="Queue">
+        <button class="q-head" id="qHead" aria-expanded="true">
+          <span class="q-ring" id="qRing" aria-hidden="true"></span>
+          <span class="q-title">Queue</span>
+          <span class="q-sum" id="qSum"></span>
+          <i data-icon="chevron" class="q-chev"></i>
+        </button>
+        <ul class="q-list" id="qList"></ul>
+      </section>
+
+      <div class="storage" id="storage">
+        <div class="st-row"><span>Storage</span><span class="num" id="stUsed">1.4 GB</span></div>
+        <div class="meter" aria-hidden="true"><span style="width:17%"></span></div>
+        <div class="st-sub">Audio copies and MIDI · <button class="link-btn" id="cleanUp">Clean up</button></div>
+      </div>
+    </nav>
+
+    <!-- ======================================================= content -->
+    <main class="content" id="content" data-mode="home">
+
+      <!-- HOME / add recordings -->
+      <section class="home" id="home" aria-labelledby="homeTitle">
+        <div class="home-inner">
+          <header class="home-head">
+            <div>
+              <h1 id="homeTitle">Add recordings</h1>
+              <p class="lede">Each file is converted on your graphics card and lands in your library, ready to check and save.</p>
+            </div>
+          </header>
+
+          <div class="dropzone" id="dropzone">
+            <svg class="dz-art" viewBox="0 0 120 84" aria-hidden="true">
+              <rect x="22" y="6" width="76" height="56" rx="9" class="dz-card dz-back"/>
+              <rect x="14" y="14" width="92" height="62" rx="10" class="dz-card"/>
+              <path d="M24 46h6l4-12 6 24 6-30 6 26 5-15 4 7h7" class="dz-wave"/>
+              <rect x="72" y="30" width="14" height="4" rx="2" class="dz-note"/>
+              <rect x="80" y="40" width="16" height="4" rx="2" class="dz-note"/>
+              <rect x="74" y="50" width="10" height="4" rx="2" class="dz-note"/>
+            </svg>
+            <span class="dz-title">Drop recordings here</span>
+            <span class="dz-sub" id="dzSub">MP3, WAV, FLAC, M4A, OGG, video &middot; as many as you like</span>
+            <span class="dz-buttons">
+              <button class="btn" id="chooseFiles" type="button"><i data-icon="add-file"></i>Choose files…</button>
+              <button class="btn ghost" id="chooseFolder" type="button"><i data-icon="folder"></i>Add a folder…</button>
+            </span>
+            <span class="dz-note" id="dzNote">Files wait in the queue and convert one after another, about 20–25 s per 2-minute piece.</span>
+          </div>
+
+          <div class="convert-as">
+            <div class="ca-group">
+              <span class="ca-label" id="instLabel">Instrument</span>
+              <div class="inst-picker" role="radiogroup" aria-labelledby="instLabel">
+                <button class="inst on" role="radio" aria-checked="true"><i data-icon="piano"></i>Piano<i data-icon="check" class="inst-check"></i></button>
+                <span class="inst soon" aria-disabled="true">More instruments soon</span>
+              </div>
+            </div>
+            <div class="ca-group ca-engine">
+              <span class="ca-label">Engine</span>
+              <span class="ca-summary"><b id="caEngine">Ensemble</b> · <span id="caViews">Stereo views 4x</span></span>
+              <button class="btn ghost sm" id="openDefaults"><i data-icon="sliders"></i>Advanced options</button>
+            </div>
+          </div>
+
+          <section class="recent" aria-labelledby="recentTitle">
+            <header class="recent-head">
+              <h2 id="recentTitle">Recent conversions</h2>
+              <button class="link-btn" id="showAll">Show all <span id="allCount"></span> <i data-icon="arrow-right"></i></button>
+            </header>
+            <div class="shelf" id="recentList" role="list"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- LIBRARY list / grid -->
+      <section class="library" id="library" aria-label="Conversions">
+        <div class="lib-head" id="libHead"></div>
+        <div class="lib-scroll" id="libScroll">
+          <div class="lib-cols" id="libCols" role="row"></div>
+          <div class="lib-body" id="libBody" role="grid" aria-label="Conversions"></div>
+        </div>
+      </section>
+
+      <!-- DETAIL pane -->
+      <aside class="detail" id="detail" aria-label="Selected conversion">
+
+        <!-- result -->
+        <div class="d-view d-result" id="dResult" hidden>
+          <header class="d-head">
+            <canvas class="cover d-cover" id="dCover" width="56" height="56" aria-hidden="true"></canvas>
+            <div class="d-title">
+              <h1 id="dName"></h1>
+              <p class="d-meta" id="dMeta"></p>
+            </div>
+            <div class="d-tools">
+              <button class="icon-btn fav-btn" id="dFav" aria-pressed="false" title="Favourite"><i data-icon="star"></i></button>
+              <button class="icon-btn" id="dExpand" title="Focus on this file" aria-pressed="false"><i data-icon="expand"></i></button>
+              <button class="icon-btn" id="dClose" title="Close (Esc)"><i data-icon="close"></i></button>
+            </div>
+          </header>
+
+          <div class="d-actions">
+            <button class="btn primary" id="saveMidi"><i data-icon="download"></i>Save MIDI</button>
+            <button class="btn" id="showFolder"><i data-icon="folder-open"></i>Show in folder</button>
+            <span class="spacer"></span>
+            <button class="btn ghost" id="optToggle" aria-expanded="false" aria-controls="opts"><i data-icon="sliders"></i><span>Options</span></button>
+          </div>
+
+          <dl class="stats" id="dStats"></dl>
+
+          <div class="roll-card">
+            <div class="transport">
+              <button class="play" id="play" aria-label="Play (Space)">
+                <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+                <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5h3.2v14H7.5zM13.3 5h3.2v14h-3.2z"/></svg>
+              </button>
+              <span class="time" id="time">0:12 / 1:00</span>
+              <div class="seg" role="radiogroup" aria-label="Listen to" id="mixSeg">
+                <button role="radio" data-mix="original" aria-checked="false">Original</button>
+                <button role="radio" data-mix="both" aria-checked="true">Both</button>
+                <button role="radio" data-mix="midi" aria-checked="false">MIDI</button>
+              </div>
+              <span class="listen-cap" id="listenCap"></span>
+              <span class="spacer"></span>
+              <div class="zoom" role="group" aria-label="Zoom">
+                <button class="icon-btn sm" id="zoomOut" aria-label="Zoom out"><i data-icon="minus"></i></button>
+                <span class="zoom-val num" id="zoomVal">24 s</span>
+                <button class="icon-btn sm" id="zoomIn" aria-label="Zoom in"><i data-icon="plus"></i></button>
+              </div>
+            </div>
+            <div class="roll" id="roll"></div>
+            <canvas class="overview" id="overview" aria-label="Whole piece overview. Click to jump." role="img"></canvas>
+            <div class="legend">
+              <span><i class="sw sw-note"></i>Key held</span>
+              <span><i class="sw sw-tail"></i>Held by pedal</span>
+              <span><i class="sw sw-pedal"></i>Sustain pedal</span>
+              <span class="legend-hint">Hover a note for details · Space to play</span>
+            </div>
+          </div>
+
+          <section class="opts" id="opts" aria-label="Options for this file">
+            <button class="opts-bar" id="optsBar" aria-expanded="false" aria-controls="optsBody">
+              <i data-icon="sliders"></i>
+              <span class="opts-bar-title">Options</span>
+              <span class="opts-sum" id="optsSum"></span>
+              <span class="opts-bar-cta">Show <i data-icon="chevron"></i></span>
+            </button>
+            <div class="opts-body" id="optsBody" hidden>
+              <header class="opts-head">
+                <h2>Options for this file</h2>
+                <p>MIDI-file options apply instantly. Engine changes need a re-convert.</p>
+                <button class="btn ghost sm" id="optsReset"><i data-icon="reset"></i>Reset to defaults</button>
+                <button class="icon-btn" id="optsClose" title="Hide options" aria-label="Hide options"><i data-icon="chevron-down"></i></button>
+              </header>
+              <div class="opt-host" id="optHost"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- progress -->
+        <div class="d-view d-progress" id="dProgress" hidden>
+          <header class="d-head">
+            <canvas class="cover d-cover" id="pCover" width="56" height="56" aria-hidden="true"></canvas>
+            <div class="d-title">
+              <h1 id="pName"></h1>
+              <p class="d-meta" id="pMeta"></p>
+            </div>
+            <div class="d-tools">
+              <button class="icon-btn" id="pClose" title="Close (Esc)"><i data-icon="close"></i></button>
+            </div>
+          </header>
+          <div class="pg-card">
+            <div class="pg-top">
+              <div class="pg-pct num" id="pgPct" aria-hidden="true">46<span>%</span></div>
+              <div class="pg-text">
+                <div class="pg-step" id="pgStep">Transcribing window 5 of 9</div>
+                <div class="pg-eta" id="pgEta">About 14 s left</div>
+              </div>
+              <button class="btn" id="pgCancel"><i data-icon="close"></i>Cancel</button>
+            </div>
+            <div class="bar" role="progressbar" aria-labelledby="pgStep" aria-valuemin="0" aria-valuemax="100" id="pgBarWrap"><span id="pgBar"></span></div>
+            <ol class="stages" id="pgStages"></ol>
+          </div>
+          <div class="pg-live">
+            <div class="pg-live-head">
+              <h2>Live preview</h2>
+              <span class="pg-live-cap">Notes appear as each 16-second window is transcribed</span>
+            </div>
+            <canvas id="pgCanvas" aria-hidden="true"></canvas>
+          </div>
+          <div class="pg-foot">
+            <div class="pg-settings" id="pgSettings"></div>
+            <details class="log" id="pgLogBox">
+              <summary>Log</summary>
+              <pre id="pgLog"></pre>
+            </details>
+          </div>
+        </div>
+
+        <!-- waiting / failed / cancelled -->
+        <div class="d-view d-state" id="dState" hidden>
+          <header class="d-head">
+            <canvas class="cover d-cover" id="sCover" width="56" height="56" aria-hidden="true"></canvas>
+            <div class="d-title">
+              <h1 id="sName"></h1>
+              <p class="d-meta" id="sMeta"></p>
+            </div>
+            <div class="d-tools">
+              <button class="icon-btn" id="sClose" title="Close (Esc)"><i data-icon="close"></i></button>
+            </div>
+          </header>
+          <div class="state-card" id="stateCard"></div>
+        </div>
+
+      </aside>
+    </main>
+  </div>
+
+  <!-- defaults drawer (from home: Advanced options) -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true" inert>
+    <header class="drawer-head">
+      <div>
+        <h2 id="drawerTitle">Advanced options</h2>
+        <p>Defaults for new conversions. Each file keeps its own copy, so you can change it later.</p>
+      </div>
+      <button class="icon-btn" id="drawerClose" aria-label="Close"><i data-icon="close"></i></button>
+    </header>
+    <div class="drawer-body opt-host single" id="drawerHost"></div>
+    <footer class="drawer-foot">
+      <button class="btn ghost" id="drawerReset"><i data-icon="reset"></i>Reset to defaults</button>
+      <span class="muted small">MIDI Converter 0.1.0</span>
+    </footer>
+  </aside>
+
+  <div class="drop-overlay" id="dropOverlay" hidden>
+    <div class="drop-overlay-card"><i data-icon="add-file"></i><span id="dropOverlayText">Drop to add to your library</span></div>
+  </div>
+  <div class="menu" id="menu" role="menu" hidden></div>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+  <nav class="switcher" id="switcher" aria-label="Prototype states"></nav>
+
+  <script src="../../shared/mock-data.js"></script>
+  <script src="../../shared/roll.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

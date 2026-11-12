@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIDI Converter · 12 design directions</title>
+<style>
+  :root { --bg: #111215; --card: #1a1b20; --line: #2a2b31; --ink: #ececf1; --muted: #9a9aa3; --accent: #8484ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 16px 28px; background: rgba(17, 18, 21, .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font: 600 18px/1.2 "Segoe UI Variable Display", "Segoe UI", sans-serif; letter-spacing: -.01em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .seg { display: inline-flex; padding: 3px; border-radius: 10px; background: #0c0d10; border: 1px solid var(--line); }
+  .seg button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: #2a2b33; color: var(--ink); }
+  .spacer { flex: 1; }
+  .hint { color: var(--muted); font-size: 12.5px; }
+  main { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 22px; padding: 24px 28px 60px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
+  .frame { position: relative; overflow: hidden; background: #000; cursor: zoom-in; }
+  .frame iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
+  .meta { padding: 12px 14px 14px; display: grid; gap: 4px; }
+  .meta .row { display: flex; align-items: baseline; gap: 10px; }
+  .num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .name { font-weight: 600; font-size: 15px; }
+  .pitch { color: #c9c9d1; }
+  .for { color: var(--muted); font-size: 12.5px; }
+  .open { margin-left: auto; color: var(--accent); text-decoration: none; font-size: 12.5px; }
+  .open:hover { text-decoration: underline; }
+  .viewer { position: fixed; inset: 0; z-index: 10; display: none; flex-direction: column; background: rgba(5, 5, 8, .9); }
+  .viewer.on { display: flex; }
+  .viewer .bar { display: flex; align-items: center; gap: 14px; padding: 12px 20px; }
+  .viewer .bar b { font-size: 15px; }
+  .viewer .stage { flex: 1; display: grid; place-items: center; overflow: auto; padding: 0 20px 20px; }
+  .viewer iframe { border: 0; border-radius: 10px; background: #fff; box-shadow: 0 30px 80px rgba(0, 0, 0, .6); }
+  .x { margin-left: auto; background: #2a2b33; color: var(--ink); border: 0; border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MIDI Converter <span>· 12 design directions</span></h1>
+  <div class="seg" id="states" aria-label="Screen">
+    <button data-state="home" aria-pressed="false">Home</button>
+    <button data-state="progress" aria-pressed="false">Converting</button>
+    <button data-state="result" aria-pressed="true">Result</button>
+    <button data-state="advanced" aria-pressed="false">Advanced options</button>
+  </div>
+  <div class="seg" id="sizes" aria-label="Window size">
+    <button data-size="1240x880" aria-pressed="true">Window 1240×880</button>
+    <button data-size="820x600" aria-pressed="false">Minimum 820×600</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="hint">Click a preview to open it full size and interact with it · real transcription data (Schubert, Impromptu Op. 90 No. 4)</span>
+</header>
+<main id="grid"></main>
+<div class="viewer" id="viewer" role="dialog" aria-modal="true">
+  <div class="bar"><b id="vName"></b><span class="hint" id="vPitch"></span>
+    <div class="seg" id="vStates"></div>
+    <button class="x" id="vClose">Close (Esc)</button></div>
+  <div class="stage"><iframe id="vFrame" title="Variant"></iframe></div>
+</div>
+<script>
+const VARIANTS = [
+  ['01-essential', 'Essential', 'The easiest possible: one huge drop target, one big Save button, three plain choices.', 'Anyone who just wants the MIDI file'],
+  ['02-modern', 'Modern', 'The current app, refined: clean cards, indigo accent, light and dark.', 'Everyone; the reference baseline'],
+  ['03-console', 'Engineer Console', 'Everything visible: confidence-coloured roll, histograms, note table, logs, CLI preview.', 'Engineers and the curious'],
+  ['04-pro', 'Pro Dashboard', 'Between modern and technical: stat cards, two charts, always-visible options sidebar.', 'Power users who like data, calmly'],
+  ['05-studio', 'Studio', 'DAW-style: transport, waveform and MIDI lanes, pedal automation, inspector.', 'Producers and DAW users'],
+  ['06-rack', 'Hardware Rack', 'A piece of studio gear: VFD display, knobs, switches, backlit CONVERT and SAVE.', 'Gear lovers; a fun, tactile take'],
+  ['07-sheet', 'Sheet & Ink', 'Paper and serif type; the result as a graphic score with dynamics and Ped. marks.', 'Classical pianists and teachers'],
+  ['08-playful', 'Playful', 'Friendly consumer app: soft gradients, rounded shapes, encouraging copy.', 'Hobbyists and students'],
+  ['09-brutalist', 'Brutalist', 'Raw edge: huge condensed type, hard grid, one yellow accent, big numbers.', 'People who like bold, stark design'],
+  ['10-glass', 'Glass', 'Ambient and translucent: aurora background, frosted panels, floating transport.', 'Those who want calm and premium'],
+  ['11-guided', 'Guided', 'Step by step: choose recording, choose quality, convert, review and save.', 'Beginners'],
+  ['12-library', 'Library', 'Many files: sortable library, queue, mini roll thumbnails, batch actions, detail pane.', 'People converting whole collections'],
+];
+let state = 'result', size = [1240, 880];
+const grid = document.getElementById('grid');
+const url = (f, st, clean = true) => `variants/${f}/index.html?state=${st}${clean ? '&clean=1' : ''}`;
+
+function render() {
+  grid.innerHTML = '';
+  VARIANTS.forEach(([folder, name, pitch, who], i) => {
+    const card = document.createElement('article');
+    card.className = 'card';
+    const frame = document.createElement('div');
+    frame.className = 'frame';
+    const ifr = document.createElement('iframe');
+    ifr.loading = 'lazy';
+    ifr.title = name;
+    ifr.width = size[0]; ifr.height = size[1];
+    ifr.src = url(folder, state);
+    frame.append(ifr);
+    frame.onclick = () => openViewer(i);
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = `<div class="row"><span class="num">${String(i + 1).padStart(2, '0')}</span><span class="name"></span>
+      <a class="open" target="_blank" href="${url(folder, state, false)}">Open in a new tab ↗</a></div>
+      <div class="pitch"></div><div class="for"></div>`;
+    meta.querySelector('.name').textContent = name;
+    meta.querySelector('.pitch').textContent = pitch;
+    meta.querySelector('.for').textContent = 'For: ' + who;
+    card.append(frame, meta);
+    grid.append(card);
+  });
+  fit();
+}
+function fit() {
+  for (const fr of document.querySelectorAll('.frame')) {
+    const w = fr.clientWidth, s = w / size[0];
+    fr.style.height = Math.round(size[1] * s) + 'px';
+    fr.firstChild.style.transform = `scale(${s})`;
+  }
+}
+new ResizeObserver(fit).observe(grid);
+
+function pressGroup(id, attr, value) {
+  for (const b of document.getElementById(id).querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset[attr] === value));
+}
+document.getElementById('states').onclick = (e) => { const s = e.target.dataset.state; if (!s) return; state = s; pressGroup('states', 'state', s); render(); };
+document.getElementById('sizes').onclick = (e) => { const s = e.target.dataset.size; if (!s) return; size = s.split('x').map(Number); pressGroup('sizes', 'size', s); render(); };
+
+const viewer = document.getElementById('viewer'), vFrame = document.getElementById('vFrame');
+let vIndex = 0, vState = 'result';
+function openViewer(i) {
+  vIndex = i; vState = state;
+  const [folder, name, pitch] = VARIANTS[i];
+  document.getElementById('vName').textContent = `${String(i + 1).padStart(2, '0')} · ${name}`;
+  document.getElementById('vPitch').textContent = pitch;
+  const vs = document.getElementById('vStates');
+  vs.innerHTML = '';
+  for (const [st, label] of [['home', 'Home'], ['progress', 'Converting'], ['result', 'Result'], ['advanced', 'Advanced']]) {
+    const b = document.createElement('button');
+    b.textContent = label; b.dataset.state = st; b.setAttribute('aria-pressed', String(st === vState));
+    b.onclick = () => { vState = st; for (const x of vs.children) x.setAttribute('aria-pressed', String(x === b)); vFrame.src = url(folder, st, false); };
+    vs.append(b);
+  }
+  vFrame.width = size[0]; vFrame.height = size[1];
+  vFrame.src = url(folder, vState, false);
+  viewer.classList.add('on');
+}
+document.getElementById('vClose').onclick = () => { viewer.classList.remove('on'); vFrame.src = 'about:blank'; };
+addEventListener('keydown', (e) => {
+  if (!viewer.classList.contains('on')) return;
+  if (e.key === 'Escape') document.getElementById('vClose').click();
+  if (e.key === 'ArrowRight') openViewer((vIndex + 1) % VARIANTS.length);
+  if (e.key === 'ArrowLeft') openViewer((vIndex + VARIANTS.length - 1) % VARIANTS.length);
+});
+render();
+</script>
+</body>
+</html>

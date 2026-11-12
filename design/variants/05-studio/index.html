@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIDI Converter</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f0a640'/%3E%3Cpath d='M9 9v14M14 9v14M19 9v14M24 9v14' stroke='%231b1306' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<script>
+// Errors are shown in a red banner when the URL has &debug=1.
+(function () {
+  var dbg = /[?&]debug=1(&|$)/.test(location.search);
+  window.onerror = function (msg, src, line, col) {
+    if (!dbg) return false;
+    var show = function () {
+      var b = document.getElementById('debugBanner');
+      if (!b) { b = document.createElement('div'); b.id = 'debugBanner'; (document.body || document.documentElement).appendChild(b); }
+      b.hidden = false;
+      var row = document.createElement('div');
+      row.textContent = 'Error: ' + msg + '  (' + String(src || '').split('/').pop() + ':' + line + ':' + col + ')';
+      b.appendChild(row);
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+    return false;
+  };
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="view-home">
+
+<!-- Icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.2v13.6L19 12z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="7" y="5.5" width="3.6" height="13" rx="1" fill="currentColor"/><rect x="13.4" y="5.5" width="3.6" height="13" rx="1" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-start" viewBox="0 0 24 24"><path d="M6.5 6v12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M18 6.2v11.6L9.2 12z" fill="currentColor"/></symbol>
+    <symbol id="i-loop" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7.5H8a4 4 0 0 0-4 4v.5"/><path d="M7 16.5h9a4 4 0 0 0 4-4V12"/><path d="M14.5 4.8 17.2 7.5l-2.7 2.7"/><path d="M9.5 19.2 6.8 16.5l2.7-2.7"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></g></symbol>
+    <symbol id="i-audio" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/><path d="M9 15v-2M11.2 16.5v-5M13.4 15.5v-3M15.6 14.5v-1"/></g></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/></g><path d="M10 11.5v5l4.2-2.5z" fill="currentColor"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.15" fill="currentColor"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4M8 12h8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+    <symbol id="i-panel-left" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></g><path d="M5.5 8h2M5.5 11h2M5.5 14h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-headphones" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4.5 15v-2.5a7.5 7.5 0 0 1 15 0V15"/><rect x="3.5" y="14" width="4" height="6" rx="1.3"/><rect x="16.5" y="14" width="4" height="6" rx="1.3"/></g></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-convert" viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 24h3l2.5-7 3.5 15 3.5-20 3.5 17 2.5-9 2 4h2.5" stroke-width="2.4"/><path d="M28.5 20.5 32 24l-3.5 3.5" stroke-width="2.4"/></g><g fill="currentColor"><rect x="35" y="13" width="9" height="4" rx="1.5"/><rect x="38" y="20" width="7" height="4" rx="1.5"/><rect x="35" y="27" width="6" height="4" rx="1.5"/><rect x="39" y="34" width="6" height="4" rx="1.5"/></g></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+
+  <!-- ============================================================ TRANSPORT -->
+  <header class="transport" aria-label="Transport">
+    <a class="brand" href="#" id="brand" aria-label="MIDI Converter, start over">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <defs><linearGradient id="bg-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffbe62"/><stop offset="1" stop-color="#e48f22"/></linearGradient></defs>
+        <rect width="32" height="32" rx="7" fill="url(#bg-grad)"/>
+        <path d="M9 8.5v15M14 8.5v15M19 8.5v15M24 8.5v15" stroke="#1b1306" stroke-width="2.2" stroke-linecap="round"/>
+        <rect x="11" y="8.5" width="4" height="8" rx="1.1" fill="#1b1306"/>
+        <rect x="20" y="8.5" width="4" height="8" rx="1.1" fill="#1b1306"/>
+      </svg>
+      <span class="brand-name">MIDI Converter</span>
+    </a>
+
+    <button class="tbtn only-narrow-browser" id="browserToggle" type="button" aria-label="Show recent conversions" aria-expanded="false" aria-controls="browser" title="Recent conversions">
+      <svg class="ico" aria-hidden="true"><use href="#i-panel-left"/></svg>
+    </button>
+    <button class="tbtn labeled" id="newBtn" type="button" title="Convert another recording (Ctrl+O)">
+      <svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span class="lbl">New file</span>
+    </button>
+
+    <span class="tp-sep" aria-hidden="true"></span>
+
+    <div class="tp-buttons" role="group" aria-label="Playback">
+      <button class="tbtn" id="startBtn" type="button" aria-label="Go to start" title="Go to start (Home)"><svg class="ico" aria-hidden="true"><use href="#i-start"/></svg></button>
+      <button class="tbtn play" id="playBtn" type="button" aria-label="Play" title="Play / pause (Space)"><svg class="ico i-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="ico i-pause" aria-hidden="true"><use href="#i-pause"/></svg></button>
+      <button class="tbtn" id="stopBtn" type="button" aria-label="Stop" title="Stop. Press again to go to the start"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg></button>
+      <button class="tbtn loop" id="loopBtn" type="button" aria-label="Loop" aria-pressed="false" title="Loop the marked bars (L). Drag on the top of the ruler to set them"><svg class="ico" aria-hidden="true"><use href="#i-loop"/></svg></button>
+    </div>
+
+    <div class="lcd" role="group" aria-label="Position and tempo">
+      <div class="lcd-cell lcd-time">
+        <span class="lcd-val" id="lcdTime">0:00.0</span>
+        <span class="lcd-lbl">Time <span class="lcd-of">/ <span id="lcdDur">0:00</span></span></span>
+      </div>
+      <div class="lcd-cell lcd-bars">
+        <span class="lcd-val" id="lcdBars">1.1.000</span>
+        <span class="lcd-lbl">Bar · beat · tick</span>
+      </div>
+      <div class="lcd-cell lcd-tempo">
+        <input class="lcd-val lcd-input" id="tempoField" type="text" inputmode="numeric" value="120" aria-label="MIDI tempo in beats per minute" data-help="tempo" spellcheck="false" autocomplete="off">
+        <span class="lcd-lbl">BPM · 4/4</span>
+      </div>
+    </div>
+
+    <!-- render bar, shown while converting -->
+    <div class="render" id="render" hidden>
+      <div class="render-top">
+        <span class="render-state"><span class="spin" aria-hidden="true"></span>Converting</span>
+        <span class="render-file" id="renderFile"></span>
+        <span class="render-pct" id="renderPct">0%</span>
+      </div>
+      <div class="render-bar" role="progressbar" aria-label="Conversion progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="renderBar"><span id="renderFill"></span></div>
+      <div class="render-bottom"><span id="renderMsg">Reading audio</span><span id="renderEta"></span></div>
+    </div>
+    <button class="tbtn labeled ghost-danger" id="cancelBtn" type="button" hidden><span class="lbl-always">Cancel</span></button>
+
+    <span class="tp-spacer"></span>
+
+    <div class="meter" id="gpuMeter" role="group" aria-label="Graphics card load" title="NVIDIA GeForce RTX 5070 Ti · 16 GB · CUDA">
+      <div class="meter-rows">
+        <div class="meter-row"><span class="meter-k">GPU</span><span class="leds" id="gpuLeds" aria-hidden="true"></span><span class="meter-v" id="gpuPct">2%</span></div>
+        <div class="meter-row"><span class="meter-k">VRAM</span><span class="leds" id="vramLeds" aria-hidden="true"></span><span class="meter-v" id="vramVal">2.4 GB</span></div>
+      </div>
+      <span class="meter-dev" id="gpuName">RTX 5070 Ti</span>
+    </div>
+
+    <button class="tbtn labeled" id="advBtn" type="button" aria-pressed="false" aria-controls="inspector" title="Show all engine and MIDI options">
+      <svg class="ico" aria-hidden="true"><use href="#i-sliders"/></svg><span class="lbl">Advanced</span>
+    </button>
+    <button class="btn-primary" id="saveBtn" type="button" title="Save the MIDI file (Ctrl+S)">
+      <svg class="ico" aria-hidden="true"><use href="#i-save"/></svg><span>Save MIDI</span>
+    </button>
+  </header>
+
+  <!-- ============================================================ BROWSER -->
+  <aside class="browser panel" id="browser" aria-label="Recent conversions">
+    <div class="panel-head">
+      <h2 class="panel-title">Browser</h2>
+      <button class="icon-btn" id="addBtn" type="button" aria-label="Add a recording" title="Add a recording"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <button class="icon-btn only-overlay" id="browserClose" type="button" aria-label="Close recent conversions"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="browser-sub">
+      <span class="sub-title">Recent conversions</span>
+      <span class="sub-count" id="recentCount"></span>
+    </div>
+    <div class="browser-list" id="recentList"></div>
+    <div class="browser-foot">
+      <svg class="ico" aria-hidden="true"><use href="#i-folder"/></svg>
+      <span>Drop more files anywhere. They wait in line and convert one after another.</span>
+    </div>
+  </aside>
+
+  <!-- ============================================================ ARRANGEMENT -->
+  <main class="arrange" id="arrange">
+    <div class="arr-toolbar">
+      <div class="arr-title">
+        <h1 id="clipTitle">No recording yet</h1>
+        <p class="arr-meta" id="clipMeta">Drop a recording to start</p>
+      </div>
+      <div class="monitor" id="monitorWrap">
+        <span class="monitor-lbl"><svg class="ico" aria-hidden="true"><use href="#i-headphones"/></svg><span>Listen</span></span>
+        <div class="seg" role="radiogroup" aria-label="Listen to" id="monitorSeg">
+          <button type="button" role="radio" data-mix="original" aria-checked="false">Original</button>
+          <button type="button" role="radio" data-mix="both" aria-checked="true">Both</button>
+          <button type="button" role="radio" data-mix="midi" aria-checked="false">MIDI</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="arr-grid">
+      <div class="row-label ov-label" aria-hidden="true"><span>Overview</span></div>
+      <div class="ov-host"><canvas id="ovCanvas" aria-label="Overview of the whole piece. Click to move the view." role="img"></canvas></div>
+
+      <div class="row-label ruler-label">
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button class="icon-btn" id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out (−)"><svg class="ico" aria-hidden="true"><use href="#i-minus"/></svg></button>
+          <button class="icon-btn" id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in (+)"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg></button>
+          <button class="icon-btn" id="zoomFit" type="button" aria-label="Show the whole piece" title="Show the whole piece"><svg class="ico" aria-hidden="true"><use href="#i-fit"/></svg></button>
+        </div>
+        <span class="rl-labels" aria-hidden="true"><span class="rl-bar">Bar</span><span class="rl-time">Time</span></span>
+      </div>
+      <div class="ruler-host"><canvas id="rulerCanvas" role="img" aria-label="Timeline ruler. Click to move the playhead, drag along the top edge to set the loop."></canvas></div>
+
+      <div class="tracks" id="tracks">
+        <div class="thead t-audio" id="th-audio">
+          <span class="t-color" aria-hidden="true"></span>
+          <div class="t-main">
+            <div class="t-name">Original audio</div>
+            <div class="t-sub" id="audioSub">No file</div>
+            <div class="t-ctl">
+              <button class="ms m" type="button" data-ms="mute" data-lane="audio" aria-pressed="false" aria-label="Mute original audio" title="Mute original audio">M</button>
+              <button class="ms s" type="button" data-ms="solo" data-lane="audio" aria-pressed="false" aria-label="Solo original audio" title="Solo original audio">S</button>
+              <span class="t-meter" aria-hidden="true"><span id="meterAudio"></span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="thead t-midi" id="th-midi">
+          <span class="t-color" aria-hidden="true"></span>
+          <div class="t-main">
+            <div class="t-name">Piano · MIDI</div>
+            <div class="t-sub" id="midiSub">Waiting for audio</div>
+            <div class="t-ctl">
+              <button class="ms m" type="button" data-ms="mute" data-lane="midi" aria-pressed="false" aria-label="Mute piano MIDI" title="Mute piano MIDI">M</button>
+              <button class="ms s" type="button" data-ms="solo" data-lane="midi" aria-pressed="false" aria-label="Solo piano MIDI" title="Solo piano MIDI">S</button>
+              <span class="t-meter" aria-hidden="true"><span id="meterMidi"></span></span>
+            </div>
+            <ul class="legend" aria-label="Legend">
+              <li><i class="lg-note"></i><span id="lgNote">Key held</span></li>
+              <li id="lgTailRow"><i class="lg-tail"></i>Held by pedal</li>
+              <li id="lgVelRow"><i class="lg-vel"></i><span id="lgVel">Brighter = louder</span></li>
+            </ul>
+          </div>
+          <canvas class="kbd" id="kbdCanvas" aria-hidden="true"></canvas>
+        </div>
+
+        <div class="thead t-auto t-sus" id="th-sus">
+          <span class="t-color" aria-hidden="true"></span>
+          <div class="t-main">
+            <div class="t-name">Sustain <span class="t-cc">CC64</span></div>
+            <div class="seg xs" role="radiogroup" aria-label="Sustain pedal in the MIDI file" id="susSeg" data-help="pedal">
+              <button type="button" role="radio" data-opt="out.pedal" data-val="cc" aria-checked="true" title="Pedal events (CC64)">Events</button>
+              <button type="button" role="radio" data-opt="out.pedal" data-val="extend" aria-checked="false" title="Bake into note lengths">Bake</button>
+              <button type="button" role="radio" data-opt="out.pedal" data-val="none" aria-checked="false" title="Leave out">Off</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="thead t-auto t-soft" id="th-soft">
+          <span class="t-color" aria-hidden="true"></span>
+          <div class="t-main t-main-row">
+            <div class="t-name">Soft pedal <span class="t-cc">CC67</span></div>
+            <button class="tgl xs" type="button" role="switch" aria-checked="true" data-opt="out.soft_pedal" aria-label="Write soft pedal to the MIDI file" data-help="soft_pedal"><span class="tgl-track"><span class="tgl-knob"></span></span><span class="tgl-txt">On</span></button>
+          </div>
+        </div>
+
+        <div class="lanes" id="lanes">
+          <canvas id="lanesCanvas" role="img" aria-label="Arrangement: original audio waveform, piano MIDI notes, sustain and soft pedal lanes"></canvas>
+          <div class="tip" id="tip" role="tooltip" hidden></div>
+        </div>
+
+        <!-- Home: empty arrangement -->
+        <div class="drop" id="drop">
+          <div class="drop-card">
+            <svg class="drop-ico" aria-hidden="true"><use href="#i-convert"/></svg>
+            <p class="drop-title">Drop audio here</p>
+            <p class="drop-sub">Drop a recording anywhere in this window, or <button type="button" class="link" id="chooseBtn">choose a file</button></p>
+            <ul class="formats" aria-label="Accepted formats">
+              <li>MP3</li><li>WAV</li><li>FLAC</li><li>M4A</li><li>OGG</li><li>Video</li>
+            </ul>
+          </div>
+          <div class="drop-setup">
+            <div class="ds-row">
+              <span class="ds-k" id="dsInstLbl">Instrument</span>
+              <div class="seg sm" role="radiogroup" aria-labelledby="dsInstLbl">
+                <button type="button" role="radio" aria-checked="true" class="inst-on" title="Solo piano recordings">
+                  <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>Piano</button>
+                <button type="button" role="radio" aria-checked="false" aria-disabled="true" disabled class="inst-soon" title="More instruments are coming">More instruments <span class="soon">soon</span></button>
+              </div>
+            </div>
+            <div class="ds-row">
+              <span class="ds-k">Engine</span>
+              <button type="button" class="ds-engine" id="dsEngine" title="Change in Advanced options">
+                <span id="dsEngineTxt">Ensemble · Stereo views 4x</span>
+                <span class="ds-adv">Advanced options<svg class="ico" aria-hidden="true"><use href="#i-chev"/></svg></span>
+              </button>
+            </div>
+          </div>
+          <!-- narrow windows: the Browser is a slide-over, so the latest conversions are shown here -->
+          <div class="drop-recent" id="dropRecent" role="group" aria-label="Recent conversions"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================================================ INSPECTOR -->
+  <aside class="inspector panel" id="inspector" aria-label="Inspector">
+    <div class="panel-head">
+      <h2 class="panel-title" id="inspTitle">Inspector</h2>
+      <button class="text-btn" id="inspMode" type="button"></button>
+      <button class="icon-btn only-overlay" id="inspClose" type="button" aria-label="Close options"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="insp-body" id="inspBody"></div>
+    <div class="info" id="infoBox" aria-live="polite">
+      <div class="info-t" id="infoT"></div>
+      <div class="info-b" id="infoB"></div>
+    </div>
+  </aside>
+
+  <!-- ============================================================ STATUS BAR -->
+  <footer class="statusbar">
+    <span class="sb-item sb-state"><i class="dot" id="sbDot"></i><span id="sbState">Ready</span></span>
+    <span class="sb-item sb-engine" id="sbEngine"></span>
+    <span class="sb-item sb-msg" id="sbMsg" aria-live="polite"></span>
+    <span class="sb-item sb-queue" id="sbQueue"></span>
+    <span class="sb-item sb-dev"><span class="cuda">CUDA</span><span id="sbDevice">RTX 5070 Ti · 16 GB</span></span>
+    <span class="sb-item sb-ver" id="sbVer">v0.1.0</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<nav class="switcher" id="switcher" aria-label="Prototype state switcher">
+  <span class="sw-k">State</span>
+  <button type="button" data-goto="home">home</button>
+  <button type="button" data-goto="progress">progress</button>
+  <button type="button" data-goto="result">result</button>
+  <button type="button" data-goto="advanced">advanced</button>
+</nav>
+
+<div id="debugBanner" hidden></div>
+
+<script src="../../shared/mock-data.js"></script>
+<script src="../../shared/roll.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI Converter</title>
+  <meta name="color-scheme" content="dark">
+  <script>
+    // Errors are shown in a red banner when the URL has &debug=1 (set up before anything else loads).
+    (function () {
+      var DEBUG = /[?&]debug=1\b/.test(location.search);
+      function show(msg) {
+        if (!DEBUG) return;
+        var b = document.getElementById('debugBanner');
+        if (!b) {
+          b = document.createElement('div');
+          b.id = 'debugBanner';
+          b.setAttribute('role', 'alert');
+          b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#b00020;color:#fff;font:12px/1.4 Consolas,monospace;padding:8px 12px;white-space:pre-wrap;max-height:40vh;overflow:auto';
+          (document.body || document.documentElement).appendChild(b);
+        }
+        b.textContent += (b.textContent ? '\n' : '') + msg;
+      }
+      window.onerror = function (msg, src, line, col) {
+        show('Error: ' + msg + '  (' + String(src || '').split('/').pop() + ':' + line + ':' + col + ')');
+      };
+      window.addEventListener('unhandledrejection', function (e) { show('Unhandled promise: ' + (e.reason && e.reason.message || e.reason)); });
+    })();
+  </script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23101214'/%3E%3Crect x='6' y='8' width='20' height='16' rx='2' fill='none' stroke='%237cf4e2' stroke-width='1.6'/%3E%3Cpath d='M11 8v16M16 8v16M21 8v16' stroke='%237cf4e2' stroke-width='1.3'/%3E%3Crect x='9' y='8' width='4' height='9' rx='1' fill='%237cf4e2'/%3E%3Crect x='19' y='8' width='4' height='9' rx='1' fill='%237cf4e2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="rack" id="rack">
+
+  <!-- ============ 1U · TOP UNIT ============ -->
+  <header class="unit u-top">
+    <i class="screw s-ml" style="--r:18deg"></i><i class="screw s-mr" style="--r:-34deg"></i>
+    <a class="brand" href="#" id="brandHome" aria-label="MIDI Converter, go to start">
+      <span class="badge" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect x="5" y="7" width="22" height="18" rx="2.5" class="b-keys"/><path d="M10.5 7v18M16 7v18M21.5 7v18" class="b-lines"/><rect x="8.6" y="7" width="3.8" height="10" rx="1" class="b-black"/><rect x="19.6" y="7" width="3.8" height="10" rx="1" class="b-black"/></svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-name">MIDI Converter</span>
+        <span class="brand-model">MC-1 &middot; Piano transcription unit</span>
+      </span>
+    </a>
+
+    <div class="status-leds" role="group" aria-label="Status lights">
+      <span class="led-lab"><i class="led on green" aria-hidden="true"></i>Power</span>
+      <span class="led-lab"><i class="led amber" id="ledBusy" aria-hidden="true"></i>Busy</span>
+      <span class="led-lab"><i class="led teal" id="ledMidi" aria-hidden="true"></i>MIDI ready</span>
+    </div>
+
+    <div class="gpu-plate" title="Conversions run on your graphics card (CUDA)">
+      <span class="led-lab"><i class="led on green" aria-hidden="true"></i>GPU</span>
+      <span class="gpu-lcd"><span class="gpu-long">NVIDIA GeForce </span>RTX 5070 Ti<span class="gpu-long"> &middot; 16 GB</span></span>
+    </div>
+
+    <button class="hw-btn small" id="advBtn" aria-expanded="false" aria-controls="optionsUnit">
+      <i class="led amber" id="ledAdv" aria-hidden="true"></i><span>Advanced</span>
+    </button>
+  </header>
+
+  <!-- ============ 2U · MAIN UNIT ============ -->
+  <section class="unit u-main" aria-label="Status and main controls">
+    <i class="screw s-tl" style="--r:40deg"></i><i class="screw s-bl" style="--r:-12deg"></i>
+    <i class="screw s-tr" style="--r:8deg"></i><i class="screw s-br" style="--r:62deg"></i>
+
+    <div class="main-grid">
+      <div class="vfd-col">
+        <div class="vfd" id="vfd">
+          <div class="vfd-text">
+            <div class="vfd-row vfd-head">
+              <span id="vfdMode"><i class="vfd-dot"></i>READY</span>
+              <span class="vfd-aside" id="vfdAside"></span>
+            </div>
+            <div class="vfd-big" id="vfdBig">Waiting for a recording</div>
+            <div class="vfd-row vfd-sub" id="vfdSub"></div>
+            <div class="vfd-meter" id="vfdMeter" aria-hidden="true"></div>
+          </div>
+          <div class="vfd-readout" id="vfdReadout" hidden role="progressbar" aria-label="Conversion progress" aria-valuemin="0" aria-valuemax="100">
+            <span class="ro-num" id="roNum">46%</span>
+            <span class="ro-unit" id="roUnit">done</span>
+          </div>
+        </div>
+
+        <div class="signal-path">
+          <span class="silk sp-title">Signal path</span>
+          <ol class="sp-list" id="spList" aria-label="Conversion steps"></ol>
+        </div>
+      </div>
+
+      <div class="btn-cluster">
+        <div class="bc-cell">
+          <span class="silk bc-label" aria-hidden="true">Audio in</span>
+          <button class="hw-btn big amber" id="convertBtn">
+            <span class="cap-main">Convert</span><span class="cap-sub" id="convertSub">Choose a file</span>
+          </button>
+        </div>
+        <div class="bc-cell">
+          <span class="silk bc-label" aria-hidden="true">MIDI out</span>
+          <button class="hw-btn big teal" id="saveBtn">
+            <span class="cap-main">Save MIDI</span><span class="cap-sub" id="saveSub">.mid file</span>
+          </button>
+        </div>
+        <button class="hw-btn small" id="cancelBtn"><i class="led red" aria-hidden="true"></i><span>Cancel</span></button>
+        <button class="hw-btn small" id="newBtn"><svg class="eject" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3l5 6H3z"/><rect x="3" y="11" width="10" height="2" rx=".6"/></svg><span>New file</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTIONS UNIT (Advanced) ============ -->
+  <section class="unit u-options" id="optionsUnit" hidden aria-labelledby="optTitle">
+    <i class="screw s-tl" style="--r:-22deg"></i><i class="screw s-bl" style="--r:30deg"></i>
+    <i class="screw s-tr" style="--r:71deg"></i><i class="screw s-br" style="--r:-5deg"></i>
+
+    <div class="opt-head">
+      <h2 class="opt-title" id="optTitle">Advanced options</h2>
+      <div class="param-lcd" id="paramLcd" aria-live="polite">
+        <span class="pl-name" id="plName">Help</span>
+        <span class="pl-val" id="plVal"></span>
+        <span class="pl-help" id="plHelp">Point at a control, or turn it, to read what it does.</span>
+      </div>
+      <button class="hw-btn small" id="resetBtn"><span>Reset to defaults</span></button>
+      <button class="hw-btn small icon-only" id="closeAdv" aria-label="Close advanced options">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
+
+    <div class="opt-body">
+      <div class="opt-panel" role="group" aria-labelledby="ptTrans">
+        <div class="panel-title"><span class="silk-strong" id="ptTrans">Transcription</span><span class="panel-note">Used for the next conversion</span></div>
+        <div class="ctl-row" id="rowTrans"></div>
+        <div class="ctl-row">
+          <div class="subpanel" id="transkunPanel" role="group" aria-labelledby="tkTitle">
+            <div class="sub-title"><i class="led teal" id="ledTk" aria-hidden="true"></i><span id="tkTitle">Transkun V2 only<span class="sub-why" id="tkWhy"></span></span></div>
+            <div class="sub-ctls" id="rowTranskun"></div>
+          </div>
+          <div class="rerun-wrap" id="rerunWrap">
+            <button class="hw-btn small" id="rerunBtn"><i class="led amber" id="ledRerun" aria-hidden="true"></i><span>Re-convert this file</span></button>
+            <p class="rerun-note" id="rerunNote">with these settings</p>
+          </div>
+        </div>
+      </div>
+      <div class="opt-panel" role="group" aria-labelledby="ptMidi">
+        <div class="panel-title"><span class="silk-strong" id="ptMidi">MIDI file</span><span class="panel-note" id="outputNote">Changes update the open result instantly</span></div>
+        <div class="ctl-row" id="rowMidiA"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ INPUT UNIT (home) ============ -->
+  <section class="unit u-input" id="inputUnit" aria-label="Input">
+    <i class="screw s-tl" style="--r:12deg"></i><i class="screw s-bl" style="--r:-40deg"></i>
+    <i class="screw s-tr" style="--r:-70deg"></i><i class="screw s-br" style="--r:25deg"></i>
+    <div class="input-grid">
+      <button class="bay" id="dropzone" aria-describedby="dropFormats">
+        <span class="bay-corner c1" aria-hidden="true"></span><span class="bay-corner c2" aria-hidden="true"></span>
+        <span class="bay-corner c3" aria-hidden="true"></span><span class="bay-corner c4" aria-hidden="true"></span>
+        <span class="silk bay-label" aria-hidden="true">Input</span>
+        <span class="slot" aria-hidden="true"><span class="slot-lip"></span></span>
+        <span class="bay-title" id="bayTitle">Drop a recording here</span>
+        <span class="bay-sub"><span class="bay-link">or click to choose a file</span> <span class="sep" aria-hidden="true">&middot;</span> <span id="dropFormats">MP3, WAV, FLAC, M4A, OGG, video</span></span>
+      </button>
+
+      <div class="input-side">
+        <div class="side-block">
+          <span class="silk" id="instLabel">Instrument</span>
+          <div class="inst-keys" role="radiogroup" aria-labelledby="instLabel">
+            <button class="key-btn on" role="radio" aria-checked="true"><i class="led on green" aria-hidden="true"></i>Piano</button>
+          </div>
+          <p class="side-hint">More instruments soon</p>
+        </div>
+        <div class="side-block engine-block">
+          <span class="silk">Engine</span>
+          <div class="mini-lcd" id="engineSummary">Ensemble &middot; Stereo views 4&times;</div>
+          <button class="text-btn" id="advFromHome">Change in Advanced options <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MONITOR UNIT ============ -->
+  <section class="unit u-monitor" id="monitor" aria-labelledby="monTitle">
+    <i class="screw s-tl" style="--r:-60deg"></i><i class="screw s-bl" style="--r:5deg"></i>
+    <i class="screw s-tr" style="--r:33deg"></i><i class="screw s-br" style="--r:-18deg"></i>
+
+    <div class="mon-head">
+      <h2 class="silk-strong" id="monTitle">Recent conversions</h2>
+      <span class="silk" id="monAside"></span>
+    </div>
+
+    <div class="bezel">
+      <div class="screen" id="screen">
+        <!-- Home: recent conversions -->
+        <div class="page" id="pageRecent">
+          <div class="crt-cols" aria-hidden="true">
+            <span></span><span>File</span><span>Length</span><span>Result</span><span>Status</span><span class="c-when">When</span>
+          </div>
+          <ul class="crt-list" id="recentList"></ul>
+          <div class="crt-foot">
+            <span>Click a finished conversion to open it again.</span>
+            <span class="spec" id="specLine"></span>
+          </div>
+        </div>
+
+        <!-- Progress: analysis -->
+        <div class="page" id="pageProgress" hidden>
+          <div class="an-head">
+            <span class="an-file" id="anFile"></span>
+            <span class="an-fmt" id="anFmt"></span>
+          </div>
+          <div class="an-wave" id="anWave">
+            <canvas id="waveCanvas" aria-hidden="true"></canvas>
+            <div class="an-windows" id="anWindows" aria-hidden="true"></div>
+          </div>
+          <div class="an-log" id="anLog" aria-label="Conversion log"></div>
+        </div>
+
+        <!-- Result: piano roll -->
+        <div class="page" id="pageRoll" hidden>
+          <div class="roll" id="roll"></div>
+        </div>
+
+        <div class="screen-fx" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <div class="transport" id="transport" hidden>
+      <button class="hw-btn play-btn" id="playBtn" aria-label="Play">
+        <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+        <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5h3.2v14H7.5zM13.3 5h3.2v14h-3.2z"/></svg>
+        <i class="led green" id="ledPlay" aria-hidden="true"></i>
+      </button>
+      <div class="mini-vfd" id="timeLabel" aria-label="Playback position">0:12 / 1:00</div>
+
+      <div class="slide-ctl">
+        <span class="silk" id="listenLabel">Listen to</span>
+        <div class="slide" role="radiogroup" aria-labelledby="listenLabel" id="mixSlide">
+          <span class="slide-cap" aria-hidden="true"></span>
+          <button role="radio" data-mix="original" aria-checked="false" tabindex="-1">Original</button>
+          <button role="radio" data-mix="both" aria-checked="true" tabindex="0">Both</button>
+          <button role="radio" data-mix="midi" aria-checked="false" tabindex="-1">MIDI</button>
+        </div>
+      </div>
+
+      <div class="meter" id="meter" aria-hidden="true">
+        <div class="m-row"><span class="m-ch">L</span><span class="m-segs" id="meterL"></span></div>
+        <div class="m-row"><span class="m-ch">R</span><span class="m-segs" id="meterR"></span></div>
+      </div>
+
+      <div class="legend" aria-label="Legend">
+        <span><i class="sw sw-note"></i>Key held</span>
+        <span id="legendTail"><i class="sw sw-tail"></i>Held by pedal</span>
+        <span id="legendSus"><i class="sw sw-pedal"></i>Sustain</span>
+        <span id="legendSoft"><i class="sw sw-soft"></i>Soft pedal</span>
+      </div>
+
+      <div class="zoom">
+        <span class="silk" aria-hidden="true">Zoom</span>
+        <button class="hw-btn sq" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9"/></svg></button>
+        <button class="hw-btn sq" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="sr-only" id="announce" aria-live="polite"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden>
+  <i class="led on teal" aria-hidden="true"></i><span id="toastText"></span><button class="toast-action" id="toastAction" hidden></button>
+</div>
+
+<nav class="switcher" id="switcher" aria-label="Prototype states (for reviewers)">
+  <span class="sw-items"><button data-go="home">home</button><button data-go="progress">progress</button><button data-go="result">result</button><button data-go="advanced">advanced</button></span>
+  <button class="sw-toggle" type="button" aria-label="Prototype states">States</button>
+</nav>
+
+<script src="../../shared/mock-data.js"></script>
+<script src="../../shared/roll.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

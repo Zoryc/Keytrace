@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI Converter</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b5bd6'/%3E%3Cpath d='M9 9v14M14 9v14M19 9v14M24 9v14' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='11' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3Crect x='20' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3C/svg%3E">
+  <script>
+    // Error banner (?debug=1) and theme (follows Windows; ?theme=light|dark overrides) before anything paints.
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var debug = q.get('debug') === '1';
+      window.onerror = function (msg, src, line, col) {
+        if (!debug) return false;
+        var b = document.getElementById('debugBanner');
+        if (!b) {
+          b = document.createElement('div');
+          b.id = 'debugBanner';
+          b.setAttribute('role', 'alert');
+          b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#c62828;color:#fff;font:13px/1.4 Consolas,monospace;padding:8px 12px;white-space:pre-wrap;max-height:40vh;overflow:auto';
+          (document.body || document.documentElement).appendChild(b);
+        }
+        b.textContent += 'Error: ' + msg + '  (' + String(src || '').split('/').pop() + ':' + line + ':' + col + ')\n';
+        return false;
+      };
+      var root = document.documentElement;
+      var mq = matchMedia('(prefers-color-scheme: dark)');
+      window.__applyTheme = function (pref) {
+        var t = pref === 'light' || pref === 'dark' ? pref : (mq.matches ? 'dark' : 'light');
+        root.setAttribute('data-theme', t);
+        root.setAttribute('data-theme-pref', pref || 'auto');
+      };
+      window.__applyTheme(q.get('theme'));
+      mq.addEventListener('change', function () { window.__applyTheme(root.getAttribute('data-theme-pref')); });
+      if (q.get('clean') === '1') root.classList.add('clean');
+      root.classList.add('booting');
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ======================================================= top bar -->
+  <header class="topbar" id="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#" id="homeLink" aria-label="MIDI Converter, start over">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="8" class="brand-bg"/>
+          <path d="M9 9v14M14 9v14M19 9v14M24 9v14" class="brand-keys"/>
+          <rect x="11" y="9" width="4" height="8" rx="1.2" class="brand-black"/>
+          <rect x="20" y="9" width="4" height="8" rx="1.2" class="brand-black"/>
+        </svg>
+        <span>MIDI Converter</span>
+      </a>
+      <div class="topbar-right">
+        <span class="gpu" id="gpuChip" title="Running on NVIDIA GeForce RTX 5070 Ti, 16 GB">
+          <span class="gpu-dot" aria-hidden="true"></span>
+          <span class="gpu-name">RTX 5070 Ti</span>
+          <span class="gpu-extra">GPU ready</span>
+        </span>
+        <button class="btn ghost adv-btn" id="openAdvanced" type="button" aria-haspopup="dialog" aria-controls="drawer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+          <span class="adv-label">Advanced</span>
+          <span class="badge" id="changedBadge" hidden></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page" id="page">
+    <!-- ===================================================== 1. home -->
+    <section class="view view-home" id="viewHome" aria-labelledby="dropTitle">
+      <div class="card home-card">
+        <div class="home-top">
+          <div class="instrument" role="radiogroup" aria-label="Instrument">
+            <button type="button" class="inst on" role="radio" aria-checked="true" title="Solo piano recordings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M12 5v14M16 5v14"/><path class="fill" d="M6.6 5h2.8v7.5H6.6zM14.6 5h2.8v7.5h-2.8z"/></svg>
+              Piano
+            </button>
+            <span class="inst soon" aria-disabled="true" title="Guitar, voice and more are on the way">
+              More instruments <span class="soon-tag">soon</span>
+            </span>
+          </div>
+          <span class="home-hint">Solo piano works best</span>
+        </div>
+
+        <button type="button" class="dropzone" id="dropzone" aria-describedby="dropFormats">
+          <span class="drop-art" aria-hidden="true">
+            <svg viewBox="0 0 64 48">
+              <path class="wave" d="M4 24h5l3-8 4 16 4-22 4 26 4-18 3 9 3-3"/>
+              <rect class="nb" x="40" y="10" width="18" height="5" rx="2.5"/>
+              <rect class="nb" x="36" y="21" width="14" height="5" rx="2.5"/>
+              <rect class="nb" x="44" y="32" width="16" height="5" rx="2.5"/>
+            </svg>
+          </span>
+          <span class="drop-title" id="dropTitle">Drop a recording to convert</span>
+          <span class="drop-sub">or <span class="link">choose a file</span> from your PC</span>
+          <span class="formats" id="dropFormats" aria-label="Accepted formats: MP3, WAV, FLAC, M4A, OGG and video files">
+            <span>MP3</span><span>WAV</span><span>FLAC</span><span>M4A</span><span>OGG</span><span>Video</span>
+          </span>
+        </button>
+
+        <div class="home-foot">
+          <button type="button" class="summary-line" id="summaryLine" aria-haspopup="dialog" aria-controls="drawer">
+            <span class="summary-k">Engine</span>
+            <span class="summary-v" id="summaryText">Ensemble · Stereo views 4x</span>
+            <span class="summary-change">Change
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            </span>
+          </button>
+          <span class="speed-hint" id="speedHint">About 20–25 s for a 2-minute piece</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================= 2. progress -->
+    <section class="view view-progress" id="viewProgress" hidden aria-labelledby="progName">
+      <div class="card progress-card" id="progressCard">
+        <div class="p-head">
+          <span class="file-tile" id="progTile" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+          </span>
+          <div class="p-title">
+            <h1 class="p-name" id="progName">Schubert - Impromptu Op. 90 No. 4.mp3</h1>
+            <p class="p-fmt" id="progFmt">MP3 · 320 kbps · 44.1 kHz · stereo · 5.8 MB</p>
+          </div>
+          <div class="p-pct" id="progPct" aria-hidden="true">46<span>%</span></div>
+        </div>
+
+        <div class="bar" id="progBar" role="progressbar" aria-label="Conversion progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="46"><span id="progFill"></span></div>
+
+        <div class="p-status" id="progStatus">
+          <span class="p-msg" id="progMsg" aria-live="polite">Transcribing window 5 of 9</span>
+          <span class="p-eta" id="progEta">About 14 s left</span>
+        </div>
+
+        <ol class="stages" id="stages" aria-label="Steps"></ol>
+
+        <div class="error-box" id="errorBox" hidden role="alert">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>
+          <div>
+            <p class="err-title" id="errTitle">The audio track is empty.</p>
+            <p class="err-help">Check that the recording plays, or export its audio as MP3 or WAV and try again.</p>
+          </div>
+        </div>
+
+        <div class="p-foot">
+          <span class="p-device" id="progDevice">
+            <span class="gpu-dot" aria-hidden="true"></span>Running on RTX 5070 Ti · Ensemble · Stereo views 4x
+          </span>
+          <div class="p-actions">
+            <button class="btn" id="retryBtn" type="button" hidden>Try another file</button>
+            <button class="btn" id="cancelBtn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================== 3. result -->
+    <section class="view view-result" id="viewResult" hidden aria-labelledby="resultName">
+      <div class="card result-head">
+        <div class="rh-main">
+          <span class="file-tile done" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+            <span class="tile-check"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>
+          </span>
+          <div class="rh-title">
+            <h1 id="resultName" title="Schubert - Impromptu Op. 90 No. 4.mp3">Schubert - Impromptu Op. 90 No. 4.mp3</h1>
+            <p class="rh-sub" id="resultSub">Converted in 11.6 s with Ensemble (Transkun + Aria) · Stereo views 4x</p>
+          </div>
+          <div class="rh-actions">
+            <button class="btn ghost" id="newBtn" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              New file
+            </button>
+            <button class="btn primary save-btn" id="saveBtn" type="button">
+              <svg class="i-dl" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+              <svg class="i-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9"/></svg>
+              <span class="save-label">Save MIDI</span>
+            </button>
+          </div>
+        </div>
+        <dl class="stats" id="stats"></dl>
+      </div>
+
+      <div class="card roll-card" id="rollCard">
+        <div class="transport">
+          <button class="play" id="playBtn" type="button" aria-label="Play" title="Play (Space)">
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5h3.2v14H7.5zM13.3 5h3.2v14h-3.2z"/></svg>
+          </button>
+          <span class="time" id="timeLabel" aria-live="off"><b id="timeNow">0:12</b><span class="time-sep">/</span><span id="timeDur">1:00</span></span>
+          <div class="seg mix" role="radiogroup" aria-label="Listen to" id="mixSeg">
+            <button type="button" role="radio" data-mix="original" aria-checked="false" tabindex="-1">Original</button>
+            <button type="button" role="radio" data-mix="both" aria-checked="true" tabindex="0">Both</button>
+            <button type="button" role="radio" data-mix="midi" aria-checked="false" tabindex="-1">MIDI</button>
+          </div>
+          <span class="transport-spacer"></span>
+          <span class="piano-status" id="pianoStatus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4h3l4 4V6L8 10z"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/></svg><span id="pianoStatusText">Original + grand piano</span></span>
+          <div class="zoom" role="group" aria-label="Zoom">
+            <button class="icon-btn" id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+            <button class="icon-btn" id="zoomFit" type="button" aria-label="Show the whole piece" title="Show the whole piece"><svg viewBox="0 0 24 24"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4"/></svg></button>
+            <button class="icon-btn" id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></svg></button>
+          </div>
+        </div>
+
+        <div class="overview" title="The whole recording. Click or drag to jump; the box shows what the piano roll is showing.">
+          <span class="ov-t" aria-hidden="true">0:00</span>
+          <canvas id="overview" aria-label="Whole recording overview. Click to jump." role="img"></canvas>
+          <span class="ov-t ov-end" id="ovEnd" aria-hidden="true">1:00</span>
+        </div>
+
+        <div class="roll-frame" id="rollFrame">
+          <div class="roll" id="roll" role="img" aria-label="Piano roll of the transcribed notes and sustain pedal"></div>
+        </div>
+
+        <div class="legend">
+          <span><i class="sw sw-note"></i>Key held</span>
+          <span><i class="sw sw-vel"></i>Paler = quieter</span>
+          <span><i class="sw sw-tail"></i>Held by pedal</span>
+          <span id="legendPedal"><i class="sw sw-pedal"></i>Sustain pedal</span>
+          <span id="legendSoft"><i class="sw sw-soft"></i>Soft pedal</span>
+          <span class="legend-hint">Click to jump · drag to move · Ctrl + scroll to zoom · <kbd>Space</kbd> to play</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================== recent -->
+    <section class="recent" id="recent" aria-labelledby="recentTitle">
+      <div class="recent-head">
+        <h2 id="recentTitle">Recent conversions</h2>
+        <span class="recent-note" id="recentNote">Kept on this PC</span>
+      </div>
+      <ul class="recent-list" id="recentList"></ul>
+      <p class="recent-empty" id="recentEmpty" hidden>Your conversions will appear here.</p>
+    </section>
+  </main>
+
+  <!-- ================================================ advanced drawer -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true" inert>
+    <header class="drawer-head">
+      <h2 id="drawerTitle">Advanced options <span class="drawer-sub">Piano</span></h2>
+      <button class="icon-btn" id="closeAdvanced" type="button" aria-label="Close advanced options" title="Close (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="drawer-body" id="drawerBody">
+      <section class="opt-section" aria-labelledby="secEngine">
+        <div class="sec-head">
+          <h3 id="secEngine">Transcription</h3>
+          <p class="sec-note">Used for the next conversion</p>
+        </div>
+        <div id="engineOptions"></div>
+        <button class="btn subtle rerun" id="rerunBtn" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 0 1-13.7 5.6L4 15.5M4 20v-4.5h4.5"/></svg>
+          Convert this file again with these settings
+        </button>
+      </section>
+      <section class="opt-section" aria-labelledby="secOutput">
+        <div class="sec-head">
+          <h3 id="secOutput">MIDI file</h3>
+          <p class="sec-note live" id="outputNote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/></svg>Changes apply instantly, no new conversion</p>
+        </div>
+        <div id="outputOptions"></div>
+        <div class="out-card" id="outCard" hidden>
+          <span class="out-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M14 3H7.5A2.5 2.5 0 0 0 5 5.5v13A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 3v5h5"/><path d="M9 17v-4.5M12 17v-6M15 17v-3"/></svg>
+          </span>
+          <div class="out-text">
+            <p class="out-name" id="outName">Schubert - Impromptu Op. 90 No. 4.mid</p>
+            <p class="out-meta" id="outMeta">620 notes · 53 pedal presses · 120 BPM</p>
+          </div>
+          <button class="btn primary save-btn" id="drawerSave" type="button">
+            <svg class="i-dl" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            <svg class="i-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12.5l4 4 8-9"/></svg>
+            <span class="save-label">Save MIDI</span>
+          </button>
+        </div>
+      </section>
+    </div>
+    <footer class="drawer-foot">
+      <button class="btn ghost" id="resetBtn" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5M4 4v4.5h4.5"/></svg>
+        Reset to defaults
+      </button>
+      <span class="about" id="aboutLine">Options kept on this PC · v0.1.0</span>
+    </footer>
+  </aside>
+
+  <div class="drop-overlay" id="dropOverlay" hidden><div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Drop to convert</div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- reviewer-only state switcher (hidden with &clean=1) -->
+  <nav class="review" id="review" aria-label="Prototype states">
+    <span class="review-k">Prototype</span>
+    <button type="button" data-state="home">Home</button>
+    <button type="button" data-state="progress">Progress</button>
+    <button type="button" data-state="result">Result</button>
+    <button type="button" data-state="advanced">Advanced</button>
+    <button type="button" class="review-theme" id="themeBtn" title="Theme: follow Windows / light / dark">Auto</button>
+  </nav>
+
+  <script src="../../shared/mock-data.js"></script>
+  <script src="../../shared/roll.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
