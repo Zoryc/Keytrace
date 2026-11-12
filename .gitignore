@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Model weights / caches downloaded at runtime
+models/
+.cache/
+
+# Runtime data (uploads, outputs, benchmark audio)
+data/
+outputs/
+uploads/
+bench/work/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
