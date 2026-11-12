@@ -14,7 +14,7 @@ const APPEARANCES = [{ value: 'light', text: 'Light' }, { value: 'system', text:
 const WORDS = {
   engine: {
     ensemble: { short: 'Ensemble', desc: 'Transkun V2 writes, Aria-AMT double-checks.' },
-    transkun: { short: 'Transkun V2', desc: 'About 4× faster and almost as accurate.' },
+    transkun: { short: 'Transkun V2', desc: 'About twice as fast and almost as accurate.' },
     aria: { short: 'Aria-AMT', desc: 'On its own, for comparison.' },
   },
   eng: {
@@ -385,8 +385,8 @@ function reconvertHTML() {
 }
 
 function qualityHelp(q, ids) {
-  if (q === 'best') return ids.best === 'ensemble' ? 'The most accurate result. Takes 3–4× longer than Faster.' : 'Ensemble is not installed, so this uses Transkun V2.';
-  if (q === 'faster') return 'About 4× quicker and almost as accurate. Good for long recordings.';
+  if (q === 'best') return ids.best === 'ensemble' ? 'The most accurate result. Takes about twice as long as Faster.' : 'Ensemble is not installed, so this uses Transkun V2.';
+  if (q === 'faster') return 'About twice as quick and almost as accurate. Good for long recordings.';
   const eng = currentEngine();
   const views = eng.options.find((o) => o.key === 'views');
   return `Using ${engineShort(eng)}${views ? ` with ${viewsSummary(views, engineOptions().views).toLowerCase()}` : ''}, set under More settings.`;

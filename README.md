@@ -1,114 +1,149 @@
-# Keytrace
+<p align="center">
+  <img src="web/brand/keytrace-mark.svg" width="96" alt="Keytrace logo">
+</p>
 
-Keytrace is a piano transcription app for Windows. It turns **solo piano recordings into MIDI files**, as accurately as current research allows, and runs locally on your NVIDIA graphics card.
+<h1 align="center">Keytrace</h1>
 
-- **Drop a file and get a MIDI.** It reads MP3, WAV, FLAC, M4A/AAC, OGG/Opus, WMA and AIFF, plus the audio track of video files (MP4, MKV, MOV, WebM). You can also right-click a file in Explorer and choose **Convert to MIDI with Keytrace**.
-- **State-of-the-art piano transcription.** It writes the notes, how hard each key was struck (velocity), the sustain pedal and the soft pedal.
-- **Check before you save.** The result appears as a piano roll and plays on a sampled grand piano. An Original / Both / MIDI switch lets you compare it with the recording.
-- **Advanced options** are in their own panel:
-  - engine settings;
-  - how the pedal is written;
-  - played or flat dynamics;
-  - minimum note length;
-  - MIDI tempo.
+<p align="center">
+  <b>Turn piano recordings into MIDI.</b><br>
+  State-of-the-art accuracy, running privately on your own PC.
+</p>
 
-  MIDI-file options update the open result instantly, without converting again.
+<p align="center">
+  <a href="https://github.com/Zoryc/Keytrace/releases/latest"><b>Download for Windows</b></a>
+  &nbsp;·&nbsp; <a href="#accuracy">Accuracy</a>
+  &nbsp;·&nbsp; <a href="#install">Install</a>
+  &nbsp;·&nbsp; <a href="#questions">Questions</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/result.png" width="820" alt="Keytrace showing a finished transcription: Save MIDI button and a piano roll preview">
+</p>
+
+## Why Keytrace
+
+- **Accurate.** On the standard MAESTRO piano benchmark, Keytrace finds **98.6 % of the notes**. It stays above 96 % on phone, MP3, noisy and reverberant recordings.
+- **Complete.** Every note, how hard each key was struck (velocity), and the **sustain and soft pedals**.
+- **Effortless.** Drop a recording and click **Save MIDI**. You can also right-click any audio or video file in Explorer and choose **Convert to MIDI with Keytrace**.
+- **Check before you save.** A piano-roll preview plays on a sampled grand piano. Switch between **Original**, **Both** and **MIDI** to compare with the recording.
+- **Private.** Transcription runs entirely on your PC and graphics card. Your recordings never leave your computer, and no internet is needed after setup.
+
+Keytrace is made for **solo piano**.
+
+<table>
+  <tr>
+    <td><img src="docs/images/home.png" alt="Home: drop a recording"></td>
+    <td><img src="docs/images/options.png" alt="Options: Quality, Pedal, Dynamics"></td>
+    <td><img src="docs/images/result-dark.png" alt="Dark mode"></td>
+  </tr>
+  <tr>
+    <td align="center">Drop a recording</td>
+    <td align="center">Three simple options</td>
+    <td align="center">Light or dark</td>
+  </tr>
+</table>
 
 ## Install
 
-Run `Keytrace-Setup-<version>.exe` (about 31 MB). It installs for your user only, so it needs no administrator rights.
+1. Download **`Keytrace-Setup-0.2.0.exe`** (31 MB) from the [latest release](https://github.com/Zoryc/Keytrace/releases/latest).
+2. Run it. It installs for your user only, so no administrator rights are needed.
+   - Windows may say *"Windows protected your PC"* because the installer isn't code-signed. Click **More info**, then **Run anyway**.
+3. Keep **Ensemble mode** ticked for the best accuracy. Choose a desktop shortcut and the right-click menu entry if you want them.
+4. Setup then downloads what Keytrace needs, about **3 GB** (roughly 5 minutes on a fast connection):
 
-Setup then opens a progress window and downloads what the app needs: Python, the GPU version of PyTorch and the transcription models.
-
-| Component | Download | Notes |
+| Component | Download | |
 |---|---|---|
-| Keytrace (required) | about 2.8 GB | Python 3.13, PyTorch with CUDA 12.8, Transkun V2 |
-| Ensemble mode with Aria-AMT (on by default) | about 450 MB | the most accurate setting; its model weights are licensed for non-commercial use |
+| Keytrace | about 2.8 GB | Python, PyTorch for your NVIDIA GPU, the Transkun V2 model |
+| Ensemble mode (Aria-AMT) | about 450 MB | the most accurate setting, on by default |
 
-**Requirements:**
+**Requirements**
 - Windows 10 or 11, 64-bit.
-- An NVIDIA GPU. An RTX card is recommended; without one the app falls back to the CPU and is very slow.
+- An NVIDIA graphics card (RTX recommended). Without one, Keytrace runs on the processor, much more slowly.
 - About 8 GB of free disk space.
-- An internet connection during setup.
+- Internet during setup only.
 
-If the download is interrupted, **Keytrace.exe** finishes it the next time you open the app.
+If the download is interrupted, open Keytrace and it finishes the setup.
 
-The installer is not code-signed, so the first time Windows SmartScreen may show "Windows protected your PC". Click **More info**, then **Run anyway**.
+To uninstall, use Windows **Settings → Apps → Keytrace**. It asks whether to keep your conversion history.
 
-Uninstall from Windows Settings → Apps. The uninstaller asks whether to keep your conversion history, which is stored in `%LOCALAPPDATA%\Keytrace`.
-
-Versions before 0.2.0 were called MIDI Converter and kept their history in `%LOCALAPPDATA%\MIDI Converter`. Keytrace moves that folder to `%LOCALAPPDATA%\Keytrace` the first time it starts.
-
-## Use
+## Using Keytrace
 
 1. Open **Keytrace** from the Start menu.
-2. Drop a recording on the window, or click **choose a file**. Conversion starts right away. A 2-minute piece takes about 20–25 seconds with the default Ensemble engine on an RTX 5070 Ti.
-3. Check the result:
-   - Press Space to play.
-   - Switch between **Original**, **Both** and **MIDI**.
-   - Hover a note to see its pitch, velocity and length, and how sure the model is. Notes the model is less sure about are drawn dashed.
-4. Click **Save MIDI**.
+2. Drop a recording on the window, or click **choose a file**. It reads MP3, WAV, FLAC, M4A/AAC, OGG/Opus, WMA and AIFF, and the audio of MP4, MKV, MOV and WebM videos.
+3. Conversion starts right away. A 2-minute piece takes about 20–25 seconds on an RTX 5070 Ti.
+4. Listen to the preview and press **Space** to play or pause. Hover a note to see what it is, its loudness and its length. Notes Keytrace is unsure about are drawn dashed.
+5. Click **Save MIDI**.
 
-Recent conversions are listed under the drop area. Click one to open it again.
+Your recent conversions stay on the home screen; click one to open it again.
 
-### Advanced options
+### Options
 
-| Option | What it does |
+Three plain choices cover almost everything:
+
+| Option | Choices |
 |---|---|
-| Engine | **Ensemble (Transkun + Aria)**: the most accurate and the default. **Transkun V2**: about 4× faster and almost as accurate. **Aria-AMT**: alone, for comparison. |
-| Analysis views | Each 16-second window is analysed as stereo, left, right and mid, and the results are averaged. This is the default because it measured best. |
-| Second opinion | How unsure Transkun must be before a note that only Aria heard is added. |
-| Sustain pedal | Pedal events (CC64), baked into note lengths, or left out. |
-| Soft pedal | Include una corda events (CC67). |
-| Dynamics | As played, or one flat velocity. |
-| Minimum note length | Drop very short notes. |
-| MIDI tempo | Changes only how bars line up in a DAW or notation app. Notes keep their real timing. |
+| **Quality** | **Best**: Ensemble, the most accurate. **Faster**: about twice as quick and almost as accurate. |
+| **Pedal** | **Keep as pedal**: sustain pedal events, the most faithful. **Bake into notes**: for apps that ignore the pedal. **Leave out**. |
+| **Dynamics** | **As played**: every key's real loudness. **Even**: all notes the same. |
+
+**More settings** adds:
+- **Engine:** Ensemble, Transkun V2 or Aria-AMT, plus each one's own settings.
+- **Second opinion:** how readily Aria-AMT may add notes.
+- **Output:** soft pedal, minimum note length and MIDI tempo.
+- **Appearance:** light, dark, or matching Windows.
+
+Pedal, dynamics and the other file options update an open result instantly, without converting again.
 
 ## Accuracy
 
-Measured with `bench/` on **12 excerpts of 2 minutes each from the MAESTRO v3 test split**, which none of the models trained on, with the standard transcription metrics (mir_eval).
+Measured on **12 two-minute excerpts from the MAESTRO v3 test set**, recordings none of the models were trained on. The benchmark uses the standard transcription metric: a note counts when its pitch is right and it starts within 50 ms. The same excerpts were also degraded to imitate real-world recordings.
 
-The same excerpts were also degraded to imitate real-world recordings:
-- a 128 kbps MP3;
-- a phone recording;
-- a concert hall's reverb;
-- noise at 15 dB;
-- a worst case combining hall, noise, phone and a 64 kbps MP3.
-
-Note-onset F1 (%), where a note counts when its pitch is right and its start is within 50 ms:
-
-| Engine | Clean | MP3 | Phone | Reverb | Noise | Worst case |
+| | Clean | MP3 128k | Phone | Concert-hall reverb | Noise | All combined |
 |---|---|---|---|---|---|---|
-| Transkun V2, paper settings | 98.36 | 98.30 | 97.14 | 98.30 | 97.69 | 96.14 |
-| Transkun V2, stereo views (this app) | 98.38 | 98.37 | 97.37 | 98.36 | 97.74 | 96.00 |
+| **Keytrace (Ensemble)** | **98.61** | **98.59** | **97.79** | **98.60** | **98.11** | **96.62** |
+| Transkun V2 alone | 98.38 | 98.37 | 97.37 | 98.36 | 97.74 | 96.00 |
 | Aria-AMT alone | 97.54 | 97.56 | 95.82 | 97.62 | 96.70 | 89.96 |
-| **Ensemble (this app's default)** | **98.61** | **98.59** | **97.79** | **98.60** | **98.11** | **96.62** |
+| MuScriptor medium (multi-instrument) | 86.46 | | | | | |
 
-- **Other models:** MuScriptor medium (Kyutai/Mirelo 2026, the multi-instrument model NeuralNote v2 uses) scored 86.46 at best on the clean set (`bench/muscriptor_bench.py`), about 12 points below. It also outputs no velocity or pedal. A general multi-instrument model is not a match for a piano specialist here.
-- **Ensemble:** it also improves note ends (by +0.18 to +0.30 points) and sounding lengths with the pedal (by +0.30 to +0.73 points). Velocity is unchanged. Note detection is better on 7–9 of the 12 pieces in every condition, worse on at most one, and equal on the rest.
-- **Stereo views:** compared with the paper settings, they improve note-end accuracy on 11 of 12 pieces. On noisy audio they also improve sustain-pedal accuracy by up to 6.6 points.
-- **Where to find the details:** the full tables and the method are in `bench/`. Every rule and threshold was chosen by leave-one-piece-out cross-validation.
+The Ensemble also improves where notes end, including how long the pedal holds them, and keeps loudness accuracy unchanged. Every rule was chosen by cross-validation, never tuned on the pieces it is measured on. The method and the full tables are in [`bench/`](bench).
 
 ### How it works
 
-1. **Decode.** PyAV, which bundles FFmpeg, reads the file at its native sample rate.
-2. **Transkun V2** ([Yan & Duan, ISMIR 2024](https://github.com/Yujia-Yan/Transkun)) is the primary model. A transformer scores every possible note interval, and a semi-Markov CRF picks the best set exactly. On top of the original, Keytrace adds:
-   - averaging over four stereo views;
-   - a fix for an upstream bug that cut long pedal presses where analysis windows meet;
-   - full 32-bit precision and the highest-quality resampling;
-   - an exact per-note confidence taken from the CRF's posterior.
-3. **Aria-AMT** ([EleutherAI](https://github.com/EleutherAI/aria-amt)) gives a second opinion. A note only Aria heard is added when Transkun's own probability of a note starting there is at least 0.3, so Aria only breaks ties where Transkun was unsure. Each added note gets Transkun's own estimate of when the key was released.
-4. **Write.** Key releases stay key releases, and the pedal is written as CC64/CC67 events.
+1. **[Transkun V2](https://github.com/Yujia-Yan/Transkun)** (ISMIR 2024) transcribes the recording.
+   - A transformer scores every possible note, and an exact decoder picks the best set.
+   - Keytrace analyses each passage from four stereo views and averages them, runs at full precision, and fixes an upstream bug that cut long pedal presses.
+   - Each note also gets its exact confidence.
+2. **[Aria-AMT](https://github.com/EleutherAI/aria-amt)** gives a second opinion. A note only Aria hears is added when Transkun was itself unsure about that spot, and it gets Transkun's own estimate of when the key was released.
+3. The MIDI keeps real key releases, velocities, and sustain and soft pedal events.
 
 ## Limitations
 
-- **Solo piano only.** With other instruments, their notes can be written as piano notes and piano notes under them can be missed. Published results show about 85 % instead of 98 % with an orchestra.
-- **Pedals:** sustain and soft pedal are on/off; half-pedalling and the sostenuto pedal are not detected.
-- **Highest notes:** notes near the top of the keyboard (around C8) are sometimes missed, because the model listens up to 8 kHz.
-- **Speed:** a GPU is strongly recommended.
-- **Licenses:** the models are trained on MAESTRO (CC BY-NC-SA 4.0) and the Aria-AMT weights are non-commercial. Treat transcriptions as fine for personal use, not commercial.
+- **Solo piano only.** With other instruments playing, their notes can be written as piano notes.
+- **Pedals:** sustain and soft pedal are on/off; half-pedalling and the middle (sostenuto) pedal aren't detected.
+- **Highest notes:** the very top of the keyboard (around C8) is sometimes missed.
+- **Heavy reverb** can make notes look longer than they were played.
 
-## Development
+## Questions
+
+**Windows says "Windows protected your PC".**
+The installer isn't code-signed. Click **More info**, then **Run anyway**.
+
+**The setup download failed.**
+Check your connection and open Keytrace; it resumes the setup. The full log is in `setup.log` in the install folder (`%LOCALAPPDATA%\Programs\Keytrace` by default).
+
+**I don't have an NVIDIA graphics card.**
+Keytrace still works on the processor, but a 2-minute piece takes minutes instead of seconds.
+
+**Where are my files?**
+Your MIDI files go where you save them. Conversion history and settings are in `%LOCALAPPDATA%\Keytrace`. Versions before 0.2.0 were called *MIDI Converter*; their history is moved there automatically.
+
+**Can I use the MIDI files commercially?**
+The models were trained on the MAESTRO dataset (CC BY-NC-SA 4.0), and the Aria-AMT weights are non-commercial. Treat transcriptions as fine for personal use.
+
+<details>
+<summary><b>For developers</b></summary>
+
+Requirements: Windows, Python 3.13, an NVIDIA GPU.
 
 ```bash
 python -m venv .venv
@@ -130,41 +165,49 @@ python -m venv .venv
 .venv\Scripts\python scripts\fetch_piano_samples.py
 ```
 
-Run the app, or convert a file from the command line:
+Run the app:
 
 ```bash
 .venv\Scripts\python -m midiconv
 ```
 
+Convert from the command line:
+
 ```bash
-.venv\Scripts\python -m midiconv convert "recording.mp3" -o "recording.mid" --engine transkun
+.venv\Scripts\python -m midiconv convert "recording.mp3" -o "recording.mid"
 ```
 
-Benchmark: `bench\fetch_maestro.py` downloads about 230 MB of MAESTRO excerpts, `bench\degrade.py` makes the degraded copies, `bench\evaluate.py --list` shows the configurations, and `bench\fusion.py` runs the ensemble analysis.
+The optional Aria-AMT engine is installed by `scripts/install_aria.py`, plus `scripts/get_aria_weights.py` for its weights.
 
-To build the installer, see [installer/README.md](installer/README.md):
+Build the installer (see [installer/README.md](installer/README.md)):
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
 ```
 
-### Layout
+The benchmark scripts are in `bench/`:
+- `fetch_maestro.py` downloads the excerpts (about 230 MB).
+- `degrade.py` makes the degraded copies.
+- `evaluate.py` scores engines.
+- `fusion.py` analyses the ensemble.
 
 | Path | What |
 |---|---|
-| `midiconv/` | the app's Python package (it keeps its original name, `midiconv`) |
-| `midiconv/engines/` | the piano engines (`transkun_engine.py`, `aria_engine.py`, `ensemble_engine.py`) and their registry |
-| `midiconv/desktop.py` | the app window (pywebview / WebView2), single instance, file hand-off |
-| `midiconv/server.py`, `jobs.py`, `pipeline.py` | local backend for the window: job queue, conversion pipeline |
-| `web/` | the interface (HTML/CSS/JS, no build step) |
-| `bench/` | accuracy benchmark and fusion analysis |
-| `installer/` | Inno Setup script, C# launcher and setup window, build script |
-| `scripts/` | runtime setup, weights and sample downloads |
+| `midiconv/` | the app's Python package (it keeps its original name) |
+| `midiconv/engines/` | Transkun, Aria-AMT and Ensemble engines |
+| `midiconv/desktop.py` | the app window (WebView2), single instance, file hand-off |
+| `midiconv/server.py`, `jobs.py`, `pipeline.py` | local backend: job queue and conversion pipeline |
+| `web/` | the interface (HTML, CSS, JS; no build step) |
+| `installer/` | Inno Setup script, launcher and setup window, build script |
+| `bench/` | accuracy benchmark |
+| `design/` | the 12 design studies the interface was chosen from |
 
-## Credits and licenses
+</details>
 
-- [Transkun](https://github.com/Yujia-Yan/Transkun) by Yujia Yan: code MIT; weights trained on MAESTRO.
-- [Aria-AMT](https://github.com/EleutherAI/aria-amt) by EleutherAI: code Apache-2.0; weights CC BY-NC-SA 4.0.
-- [MAESTRO](https://magenta.tensorflow.org/datasets/maestro) (Hawthorne et al., 2019), CC BY-NC-SA 4.0. Used for training by the models, and for benchmarking here.
-- [smplr](https://github.com/danigb/smplr), MIT, plays the previews with the Splendid Grand Piano samples (public domain, by Akai).
-- [pywebview](https://pywebview.flowrl.com/), [PyAV](https://github.com/PyAV-Org/PyAV) / FFmpeg, soxr, pretty_midi, mir_eval, FastAPI, [uv](https://github.com/astral-sh/uv) and [Inno Setup](https://jrsoftware.org/isinfo.php).
+## Credits
+
+- [Transkun](https://github.com/Yujia-Yan/Transkun) by Yujia Yan (MIT; weights trained on MAESTRO).
+- [Aria-AMT](https://github.com/EleutherAI/aria-amt) by EleutherAI (Apache-2.0; weights CC BY-NC-SA 4.0).
+- [MAESTRO](https://magenta.tensorflow.org/datasets/maestro) by Hawthorne et al., 2019 (CC BY-NC-SA 4.0).
+- Splendid Grand Piano samples by Akai (public domain), played by [smplr](https://github.com/danigb/smplr).
+- [pywebview](https://pywebview.flowrl.com/), [PyAV](https://github.com/PyAV-Org/PyAV)/FFmpeg, soxr, pretty_midi, mir_eval, FastAPI, [uv](https://github.com/astral-sh/uv) and [Inno Setup](https://jrsoftware.org/isinfo.php).
