@@ -58,9 +58,11 @@ def apply_output_options(tr: Transcription, opts: dict) -> Transcription:
         tr = copy.deepcopy(original)
     finally:
         original.aux = saved_aux
-    min_len = max(MIN_NOTE_SECONDS, float(opts.get("min_note_ms", 0)) / 1000.0)
+    min_len = MIN_NOTE_SECONDS  # technical minimum; the user's minimum length is a filter (above)
     for track in tr.tracks:
         notes = track.notes
+        if opts.get("min_note_ms", 0):  # judge the key-release length, before any pedal extension
+            notes = [n for n in notes if n.end - n.start >= float(opts["min_note_ms"]) / 1000.0]
         if opts.get("pedal") == "extend":
             ends = pedal_extended_ends(notes, track.pedals)
             for n, e in zip(notes, ends):
@@ -73,8 +75,6 @@ def apply_output_options(tr: Transcription, opts: dict) -> Transcription:
             v = int(opts.get("flat_velocity", 80))
             for n in notes:
                 n.velocity = v
-        if opts.get("min_note_ms", 0):
-            notes = [n for n in notes if n.end - n.start >= float(opts["min_note_ms"]) / 1000.0]
         track.notes = _clean(notes, min_len)
         track.pedals = [p for p in track.pedals if p.end > p.start]
     return tr

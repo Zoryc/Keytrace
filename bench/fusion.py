@@ -90,7 +90,7 @@ def main():
             for m, ref, _, (an, ap_), (bn, bp), post in subset:
                 kw = {}
                 if post is not None:
-                    kw = {"posterior": post[0], "frame_seconds": post[1], "durations": post[2]}
+                    kw = {"posterior": post[0], "frame_seconds": post[1], "durations": post[2], "frame_offset": post[3]}
                 fused = fuse_notes(an, bn, rule=rule, threshold=thr, **kw)
                 fs.append(onset_prf(ref, fused, m["seconds"] - ev.EDGE_MARGIN))
             return np.mean(fs, axis=0)

@@ -112,6 +112,35 @@ def info():
             "output_options": [o.to_json() for o in OUTPUT_OPTIONS]}
 
 
+def _settings_path() -> Path:
+    return data_dir() / "settings.json"
+
+
+@app.get("/api/settings")
+def get_settings():
+    """UI settings live here, not in the window's localStorage: the window's origin (random port)
+    changes on every launch, so localStorage would start empty each time."""
+    try:
+        d = json.loads(_settings_path().read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+@app.put("/api/settings")
+async def put_settings(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Settings must be a JSON object.")
+    if not isinstance(body, dict) or len(json.dumps(body)) > 200_000:
+        raise HTTPException(400, "Settings must be a small JSON object.")
+    tmp = _settings_path().with_suffix(".tmp")
+    tmp.write_text(json.dumps(body), encoding="utf-8")
+    tmp.replace(_settings_path())
+    return {"ok": True}
+
+
 @app.get("/api/jobs")
 def list_jobs():
     return manager().list()

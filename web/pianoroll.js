@@ -6,9 +6,14 @@ const isBlack = (p) => BLACK.has(p % 12);
 
 export function fmtTime(t, showTenths = false) {
   t = Math.max(0, t);
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  return showTenths ? `${m}:${s.toFixed(1).padStart(4, '0')}` : `${m}:${String(Math.floor(s)).padStart(2, '0')}`;
+  if (showTenths) {
+    const tenths = Math.round(t * 10);
+    const m = Math.floor(tenths / 600);
+    const s = (tenths - m * 600) / 10;
+    return `${m}:${s.toFixed(1).padStart(4, '0')}`;
+  }
+  const whole = Math.floor(t);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
 export class PianoRoll {
@@ -37,7 +42,8 @@ export class PianoRoll {
     this.hover = null;
     this._raf = 0;
     this._readColors();
-    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { this._readColors(); this.requestDraw(); });
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { this._readColors(); this._drawKeys(); this.requestDraw(); });
+    this._watchDpr();
     new ResizeObserver(() => this._resize()).observe(el);
     this._bind();
   }
@@ -46,8 +52,15 @@ export class PianoRoll {
     // notes: [start, end, pitch, velocity, soundingEnd, confidence]
     this.notes = [...notes].sort((a, b) => a[0] - b[0]);
     this.pedals = pedals || [];
-    this.duration = Math.max(duration || 0, ...this.notes.map((n) => n[4] || n[1]), 1);
-    this.maxSpan = this.notes.reduce((m, n) => Math.max(m, (n[4] || n[1]) - n[0]), 0);
+    let d = Math.max(duration || 0, 1);
+    let span = 0;
+    for (const n of this.notes) {
+      const e = n[4] || n[1];
+      if (e > d) d = e;
+      if (e - n[0] > span) span = e - n[0];
+    }
+    this.duration = d;
+    this.maxSpan = span;
     if (this.notes.length) {
       let lo = 127, hi = 0;
       for (const n of this.notes) { lo = Math.min(lo, n[2]); hi = Math.max(hi, n[2]); }
@@ -56,13 +69,27 @@ export class PianoRoll {
       this.lo = lo; this.hi = hi;
     }
     if (!keepView) {
-      const viewW = Math.max(200, this.el.clientWidth - this.keyW);
-      this.pxPerSec = Math.min(160, Math.max(viewW / Math.min(this.duration, 24), 20));
       this.scrollX = 0;
       this.time = 0;
+      this._needsFit = true;
+      this._fit();
     }
     this.hover = null;
     this._resize();
+  }
+
+  _fit() {
+    const w = this.el.clientWidth;
+    if (!this._needsFit || w <= this.keyW) return; // hidden: fit on the first real resize
+    this._needsFit = false;
+    const viewW = w - this.keyW;
+    this.pxPerSec = Math.min(160, Math.max(viewW / Math.min(this.duration, 24), 20));
+  }
+
+  _watchDpr() {
+    // Page zoom / moving to another monitor changes devicePixelRatio without resizing the element.
+    const mq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    mq.addEventListener('change', () => { this._resize(); this._watchDpr(); }, { once: true });
   }
 
   setTime(t, playing) {
@@ -117,6 +144,7 @@ export class PianoRoll {
   }
 
   _resize() {
+    this._fit();
     const dpr = window.devicePixelRatio || 1;
     const w = this.el.clientWidth, h = this.el.clientHeight;
     for (const [cv, cw, left] of [[this.keys, this.keyW, 0], [this.canvas, w - this.keyW, this.keyW]]) {
@@ -193,7 +221,8 @@ export class PianoRoll {
     ctx.font = `11px ${getComputedStyle(document.body).fontFamily}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    for (let t = Math.floor(t0 / step) * step; t <= t1; t += step) {
+    for (let k = Math.floor(t0 / step); k * step <= t1; k++) {
+      const t = k * step;
       const x = Math.round(this._x(t)) + 0.5;
       ctx.fillStyle = c.grid;
       ctx.fillRect(x - 0.5, this.axisH, 1, H - this.axisH);

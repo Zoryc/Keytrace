@@ -24,6 +24,7 @@ export class Player {
     this.source = null;
     this.audioUrl = null;
     this.audioPromise = null;
+    this.gen = 0; // bumped by stop/setNotes/setAudio: a pending play() checks it after its awaits
   }
 
   async _init() {
@@ -63,6 +64,7 @@ export class Player {
 
   setNotes(notes, duration) {
     this.stop();
+    this.gen++;
     this.notes = [...notes].sort((a, b) => a[0] - b[0]);
     this.duration = duration;
     this.offset = 0;
@@ -71,6 +73,7 @@ export class Player {
   setAudio(url, duration) {
     if (url === this.audioUrl) return;
     this.stop();
+    this.gen++;
     this.audioUrl = url;
     this.buffer = null;
     if (this.media) { this.media.pause(); this.media.src = ''; this.media = null; }
@@ -102,16 +105,20 @@ export class Player {
 
   get time() {
     if (!this.playing) return this.offset;
+    if (this.media && !this.buffer && !this.media.paused && this.media.readyState >= 2) {
+      return Math.max(0, Math.min(this.duration, this.media.currentTime));
+    }
     const lat = (this.ctx.outputLatency || 0) + (this.ctx.baseLatency || 0);
     return Math.max(0, Math.min(this.duration, this.offset + (this.ctx.currentTime - this.startCtx) - lat));
   }
 
   async play() {
+    const gen = this.gen;
     await this._init();
     await this.ctx.resume();
     this.onStatus(this.piano ? '' : 'Loading piano sounds…');
     await Promise.all([this.pianoPromise, this._loadAudio().catch(() => this.onStatus('Could not load the original audio'))]);
-    if (this.playing) return;
+    if (this.playing || gen !== this.gen) return;
     if (this.offset >= this.duration - 0.05) this.offset = 0;
     this.playing = true;
     this.startCtx = this.ctx.currentTime + 0.06;
@@ -125,8 +132,13 @@ export class Player {
       src.start(this.startCtx, Math.min(this.offset, this.buffer.duration));
       this.source = src;
     } else if (this.media) {
+      // Start the MIDI on the media element's clock once it is actually playing.
       this.media.currentTime = this.offset;
-      this.media.play().catch(() => {});
+      try { await this.media.play(); } catch { /* blocked or failed: MIDI still plays */ }
+      if (gen !== this.gen) { this.media.pause(); return; }
+      this.offset = this.media.currentTime;
+      this.startCtx = this.ctx.currentTime + 0.02;
+      this.nextIdx = lowerBound(this.notes, this.offset);
     }
     this._tick();
     this.timer = setInterval(() => this._tick(), TICK_MS);
@@ -139,6 +151,7 @@ export class Player {
   }
 
   stop(resetOffset = false) {
+    this.gen++;
     clearInterval(this.timer);
     this.timer = 0;
     if (resetOffset) this.offset = 0;
@@ -176,7 +189,12 @@ export class Player {
   _tick() {
     if (!this.playing) return;
     const ctxNow = this.ctx.currentTime;
-    const songNow = this.offset + (ctxNow - this.startCtx);
+    let songNow = this.offset + (ctxNow - this.startCtx);
+    if (this.media && !this.buffer && !this.media.paused) {
+      // Re-anchor the MIDI schedule to the streamed audio if the two clocks drift apart.
+      const drift = this.media.currentTime - songNow;
+      if (Math.abs(drift) > 0.03) { this.startCtx -= drift; songNow = this.media.currentTime; }
+    }
     const horizon = songNow + LOOKAHEAD;
     const notes = this.notes;
     while (this.nextIdx < notes.length && notes[this.nextIdx][0] < horizon) {

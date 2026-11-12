@@ -135,8 +135,9 @@ class JobManager:
         job.cancel_event.set()
         with self._lock:
             self._jobs.pop(job_id, None)
+            running = job.status == "running"  # the worker removes it when it notices
             self._changed.notify_all()
-        if job.status in TERMINAL:
+        if not running:
             shutil.rmtree(job.workdir, ignore_errors=True)
         return True
 

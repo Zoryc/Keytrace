@@ -14,6 +14,8 @@ const state = {
   pollTimer: 0,
   exportTimer: 0,
   recent: [],
+  viewSeq: 0, // bumped whenever the main view switches to another job (late responses are ignored)
+  recentTimer: 0,
 };
 
 const roll = new PianoRoll($('roll'), { onSeek: (t) => { player.seek(t); roll.setTime(t, player.playing); updateTime(); } });
@@ -26,7 +28,14 @@ const player = new Player({
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { return {}; }
 }
-function saveSettings() { localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); }
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); } catch { /* storage full */ }
+  clearTimeout(saveSettings.timer);
+  saveSettings.timer = setTimeout(() => {
+    fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.settings) })
+      .catch(() => {});
+  }, 300);
+}
 function instrumentInfo() { return state.info.instruments.find((i) => i.id === state.instrument) || state.info.instruments[0]; }
 function engineSettings() {
   const inst = instrumentInfo();
@@ -178,6 +187,12 @@ function optionControl(spec, value, onChange) {
 }
 
 function renderDrawer() {
+  const focusedKey = document.activeElement?.closest?.('#drawer .opt')?.dataset.key;
+  renderDrawerBody();
+  if (focusedKey) document.querySelector(`#drawer .opt[data-key="${focusedKey}"] select, #drawer .opt[data-key="${focusedKey}"] input`)?.focus();
+}
+
+function renderDrawerBody() {
   const inst = instrumentInfo();
   const es = engineSettings();
   const engBox = $('engineOptions');
@@ -245,22 +260,32 @@ function renderAll() {
 // ------------------------------------------------------------------ drawer
 function openDrawer() {
   renderDrawer();
+  $('drawer').inert = false;
   $('scrim').hidden = false;
   $('drawer').classList.add('open');
   $('drawer').setAttribute('aria-hidden', 'false');
   setTimeout(() => $('closeAdvanced').focus(), 50);
 }
 function closeDrawer() {
+  const wasOpen = $('drawer').classList.contains('open');
   $('drawer').classList.remove('open');
   $('drawer').setAttribute('aria-hidden', 'true');
+  $('drawer').inert = true;
   $('scrim').hidden = true;
+  if (wasOpen && $('drawer').contains(document.activeElement)) $('openAdvanced').focus();
 }
 
 // ------------------------------------------------------------------ conversion
+const MAX_UPLOAD = 2 * 1024 ** 3;
+
 function startConversion(file, rerunOf = null) {
   if (!file && !rerunOf) return;
+  if (!state.info) { toast('Still starting up, try again in a moment.'); return; }
+  if (file && file.size > MAX_UPLOAD) { toast('This file is larger than 2 GB.'); return; }
   closeDrawer();
   stopWatching();
+  const seq = ++state.viewSeq;
+  state.job = null;
   const name = file ? file.name : rerunOf.filename;
   $('progressName').textContent = name;
   $('progressHint').textContent = '';
@@ -278,8 +303,8 @@ function startConversion(file, rerunOf = null) {
   if (rerunOf) {
     fetch(`/api/jobs/${rerunOf.id}/rerun`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(async (r) => { if (!r.ok) throw new Error((await r.json()).detail || r.statusText); return r.json(); })
-      .then((job) => { state.job = job; watch(job.id); refreshRecent(); })
-      .catch((e) => showError(e.message));
+      .then((job) => { refreshRecent(); if (seq !== state.viewSeq) return; state.job = job; watch(job.id); })
+      .catch((e) => { if (seq === state.viewSeq) showError(e.message); });
     return;
   }
   const fd = new FormData();
@@ -296,14 +321,15 @@ function startConversion(file, rerunOf = null) {
   };
   xhr.onload = () => {
     if (xhr.status >= 200 && xhr.status < 300) {
+      refreshRecent();
+      if (seq !== state.viewSeq) return; // the user moved on; the job still appears in Recent
       state.job = xhr.response;
       watch(state.job.id);
-      refreshRecent();
-    } else {
+    } else if (seq === state.viewSeq) {
       showError(xhr.response?.detail || `Upload failed (${xhr.status}).`);
     }
   };
-  xhr.onerror = () => showError('Could not reach the converter. Is it still running?');
+  xhr.onerror = () => { if (seq === state.viewSeq) showError('Could not reach the converter. Is it still running?'); };
   state.uploadXhr = xhr;
   xhr.send(fd);
 }
@@ -401,18 +427,21 @@ function onJobUpdate(job) {
 }
 
 async function openResult(job) {
+  const seq = ++state.viewSeq;
   state.job = job;
   setHash(job.id);
   try {
     const r = await fetch(`/api/jobs/${job.id}/notes`, { cache: 'no-store' });
     if (!r.ok) throw new Error();
     const data = await r.json();
-    applyResultData(job, data);
+    if (seq !== state.viewSeq) return; // another job was opened meanwhile
     show('viewResult');
+    applyResultData(job, data);
     player.setAudio(`/api/jobs/${job.id}/audio`, data.duration);
     markCurrentRecent();
     renderDrawer();
   } catch {
+    if (seq !== state.viewSeq) return;
     toast('Could not open this result.');
     goHome();
   }
@@ -454,6 +483,7 @@ function scheduleReexport() {
       if (!r.ok) throw new Error();
       const updated = await r.json();
       const n = await (await fetch(`/api/jobs/${job.id}/notes`, { cache: 'no-store' })).json();
+      if (state.job?.id !== job.id || $('viewResult').hidden) return; // the user moved on
       const t = player.time;
       const wasPlaying = player.playing;
       state.job = updated;
@@ -464,13 +494,14 @@ function scheduleReexport() {
       updateTime();
       toast('MIDI updated');
     } catch {
-      toast('Could not update the MIDI file.');
+      if (state.job?.id === job.id) toast('Could not update the MIDI file.');
     }
   }, 350);
 }
 
 function goHome() {
   stopWatching();
+  state.viewSeq++;
   state.job = null;
   setHash(null);
   show('viewDrop');
@@ -529,10 +560,15 @@ async function refreshRecent() {
     li.append(del);
     const open = () => openJob(job);
     li.onclick = open;
-    li.onkeydown = (e) => { if (e.key === 'Enter') open(); };
+    li.onkeydown = (e) => { if (e.key === 'Enter' && e.target === li) open(); };
     list.append(li);
   }
   markCurrentRecent();
+  // Jobs nobody is watching (e.g. a second file handed over) still move: refresh while any is active.
+  clearTimeout(state.recentTimer);
+  if (state.recent.some((j) => j.status === 'queued' || j.status === 'running')) {
+    state.recentTimer = setTimeout(refreshRecent, 2500);
+  }
 }
 
 function markCurrentRecent() {
@@ -541,8 +577,10 @@ function markCurrentRecent() {
 
 function openJob(job) {
   if (job.status === 'done') { stopWatching(); openResult(job); return; }
+  state.viewSeq++;
   if (job.status === 'queued' || job.status === 'running') {
     state.job = job;
+    $('progressHint').textContent = '';
     $('progressName').textContent = job.filename;
     $('errorBox').hidden = true;
     $('cancelBtn').hidden = false;
@@ -551,10 +589,14 @@ function openJob(job) {
     watch(job.id);
     return;
   }
-  state.job = job;
-  $('progressName').textContent = job.filename;
-  if (job.status === 'error') showError(job.error || 'The conversion failed.');
-  else toast('This conversion was cancelled.');
+  if (job.status === 'error') {
+    stopWatching();
+    state.job = job;
+    $('progressName').textContent = job.filename;
+    showError(job.error || 'The conversion failed.');
+  } else {
+    toast('This conversion was cancelled.');
+  }
 }
 
 // ------------------------------------------------------------------ transport
@@ -658,6 +700,10 @@ async function init() {
     document.body.innerHTML = '<p style="padding:40px;font:16px system-ui">The converter engine is not responding. Close MIDI Converter and open it again.</p>';
     return;
   }
+  try {
+    const saved = await (await fetch('/api/settings', { cache: 'no-store' })).json();
+    if (saved && typeof saved === 'object' && Object.keys(saved).length) state.settings = saved;
+  } catch { /* keep the local copy */ }
   if (state.settings.instrument && state.info.instruments.some((i) => i.id === state.settings.instrument)) state.instrument = state.settings.instrument;
   const dev = state.info.device;
   $('device').hidden = false;
@@ -693,6 +739,8 @@ window.midiconvConvertPaths = async (paths) => {
       if (first) {
         first = false;
         closeDrawer();
+        stopWatching();
+        state.viewSeq++;
         state.job = job;
         $('progressName').textContent = job.filename;
         $('progressHint').textContent = '';

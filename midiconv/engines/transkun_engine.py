@@ -75,6 +75,25 @@ def _torchaudio_or_shim():
             del sys.modules["torchaudio"]
 
 
+def _usable_channels(y: np.ndarray) -> tuple[np.ndarray, str]:
+    """Stereo views assume two live, positively correlated channels. Fall back to the live channel
+    when one is (near) silent, and flip one channel when they are in opposite polarity, so that the
+    'mid' view cannot cancel out. Returns (samples [N, C], note for the stats or '')."""
+    if y.ndim != 2 or y.shape[1] != 2 or y.shape[0] == 0:
+        return y, ""
+    probe = y[:: max(1, y.shape[0] // 2_000_000)].astype(np.float64)  # <= ~2M frames is plenty
+    e = np.sqrt((probe ** 2).mean(axis=0)) + 1e-12
+    if e.min() < 0.01 * e.max():  # one channel more than 40 dB quieter
+        live = int(np.argmax(e))
+        return np.ascontiguousarray(y[:, live:live + 1]), f"used the {'left' if live == 0 else 'right'} channel only"
+    corr = float((probe[:, 0] * probe[:, 1]).mean() / (e[0] * e[1]))
+    if corr < -0.3:  # polarity-inverted channel
+        out = y.copy()
+        out[:, 1] *= -1.0
+        return out, "right channel polarity inverted"
+    return y, ""
+
+
 class TranskunEngine(Engine):
     id = "transkun"
     name = "Transkun V2"
@@ -152,12 +171,14 @@ class TranskunEngine(Engine):
             model = self._load()
             progress.check()
             a = audio.resampled(TARGET_SR, "VHQ")
-            x = torch.from_numpy(a.samples).to(self._device).transpose(0, 1).contiguous()  # [C, N]
+            samples, channel_note = _usable_channels(a.samples)
+            # Stays on the CPU: only one 16 s window at a time is moved to the GPU.
+            x = torch.from_numpy(samples).transpose(0, 1).contiguous()  # [C, N]
             views = VIEW_SETS.get(opts.get("views", "channels"), ["orig"])
             if x.shape[0] == 1:
                 views = [v for v in views if v not in ("left", "right", "mid")] or ["orig"]
-            events, (posterior, durations) = self._run(model, x, HOP_SECONDS, views, opts.get("velocity", "mode"),
-                                          bool(opts.get("merge_fix", True)), progress)
+            events, (posterior, durations, frame_offset) = self._run(
+                model, x, HOP_SECONDS, views, opts.get("velocity", "mode"), bool(opts.get("merge_fix", True)), progress)
 
         notes, pedals = [], []
         for e in events:
@@ -168,10 +189,13 @@ class TranskunEngine(Engine):
                 pedals.append(Pedal(float(e.start), float(e.end), int(-e.pitch), 127))
         notes.sort(key=lambda n: (n.start, n.pitch))
         pedals.sort(key=lambda p: (p.start, p.cc))
-        return Transcription([Track("Piano", 0, False, notes, pedals)], audio.duration, self.id,
-                             {"views": views},
+        info = {"views": views}
+        if channel_note:
+            info["channels"] = channel_note
+        return Transcription([Track("Piano", 0, False, notes, pedals)], audio.duration, self.id, info,
                              aux={"onset_posterior": posterior, "onset_duration_frames": durations,
-                                  "frame_seconds": model.hopSize / model.fs, "lowest_pitch": 21})
+                                  "frame_seconds": model.hopSize / model.fs, "frame_offset": frame_offset,
+                                  "lowest_pitch": 21})
 
     @staticmethod
     def _view(cur, name):
@@ -218,11 +242,14 @@ class TranskunEngine(Engine):
         posterior = np.zeros((max(1, n_global), 88), dtype=np.float32)
         durations = np.ones((max(1, n_global), 88), dtype=np.int32)  # frames
 
+        # Global frame g is centred at (g + frame_offset) * hop / fs seconds; the offset is the same for
+        # every window because window starts are whole multiples of the hop.
+        frame_offset = (-pad_begin * fs / hop) - round(-pad_begin * fs / hop)
         with torch.inference_mode():
             for si, i in enumerate(starts):
                 progress(si / len(starts), f"Transcribing window {si + 1} of {len(starts)}")
                 begin_time = i / fs - pad_begin
-                cur = x[:, i:min(i + seg, n_sample)]
+                cur = x[:, i:min(i + seg, n_sample)].to(self._device)
                 if cur.shape[-1] < seg:
                     cur = F.pad(cur, (0, seg - cur.shape[-1]))
                 batch = torch.stack([self._view(cur, v) for v in views], 0)  # [K, C, S]
@@ -231,6 +258,10 @@ class TranskunEngine(Engine):
                 start_pos = [max(k - int(step / hop), 0) for k in last_p]
                 off = int(round(begin_time * fs / hop))
                 lo, hi = max(0, -off), min(onset_p.shape[0], posterior.shape[0] - off)
+                if si > 0:
+                    # A key already held when this window starts looks like an onset at its first frames;
+                    # the previous window saw that region with context, so it is the one to trust.
+                    lo = max(lo, 2)
                 if hi > lo:  # keep, per frame and key, the window that is most sure of an onset there
                     new_p = onset_p[lo:hi, 2:].numpy()
                     cur_p = posterior[lo + off:hi + off]
@@ -264,7 +295,7 @@ class TranskunEngine(Engine):
                 lst[-1].hasOffset = True
         events = [e for lst in by_type.values() for e in lst if e.hasOffset]
         with contextlib.redirect_stdout(None):  # resolveOverlapping prints '!!!!' for zero-length notes
-            return resolveOverlapping(events), (posterior, durations)
+            return resolveOverlapping(events), (posterior, durations, frame_offset)
 
     @staticmethod
     def _decode_window(model, frames, start_pos, vel_mode, last_frame_idx):

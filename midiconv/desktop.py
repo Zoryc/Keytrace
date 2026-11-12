@@ -134,7 +134,8 @@ class DesktopApi:
     def show_in_folder(self, path: str) -> None:
         p = Path(path)
         if p.exists():
-            subprocess.Popen(["explorer", "/select,", str(p)])
+            # A pre-quoted string is passed as is: explorer splits unquoted paths at commas.
+            subprocess.Popen(f'explorer /select,"{p}"')
 
     def app_info(self) -> dict:
         return {"version": __version__, "data_dir": str(data_dir())}
@@ -182,11 +183,15 @@ def _forward_to_running_instance(paths: list[str]) -> None:
     _focus_existing_window()
 
 
-def _watch_inbox(window, ready: threading.Event) -> None:
+def _watch_inbox(window, ready: threading.Event, started_at: float) -> None:
     """Pick up files sent by later launches and start converting them in this window."""
     box = _inbox()
-    for stale in box.glob("*.json"):  # requests left over from a previous session
-        stale.unlink(missing_ok=True)
+    for stale in box.glob("*.json"):  # only requests left over from a previous session
+        try:
+            if stale.stat().st_mtime < started_at - 2.0:
+                stale.unlink(missing_ok=True)
+        except OSError:
+            pass
     while True:
         time.sleep(0.5)
         for req in sorted(box.glob("*.json"), key=lambda p: p.stat().st_mtime):
@@ -209,6 +214,7 @@ def _convert_in_window(window, paths: list[str]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     files = _file_args(argv)
+    started_at = time.time()
     if not _acquire_single_instance():
         _forward_to_running_instance(files)
         return 0
@@ -276,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
             _convert_in_window(window, files)
 
     page_ready = threading.Event()
-    threading.Thread(target=_watch_inbox, args=(window, page_ready), name="inbox", daemon=True).start()
+    threading.Thread(target=_watch_inbox, args=(window, page_ready, started_at), name="inbox", daemon=True).start()
     try:
         start_kwargs = {"icon": str(ICON)} if ICON is not None else {}
         webview.start(boot, gui="edgechromium", private_mode=False, storage_path=str(data_dir() / "webview"),

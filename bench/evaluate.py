@@ -63,9 +63,10 @@ def load_reference(mid_path: Path, duration: float):
             if cc.value >= 64 and down is None:
                 down = cc.time
             elif cc.value < 64 and down is not None:
-                pedals.append(Pedal(down, cc.time, SUSTAIN))
+                if down < duration:
+                    pedals.append(Pedal(down, min(cc.time, duration), SUSTAIN))
                 down = None
-        if down is not None:
+        if down is not None and down < duration:
             pedals.append(Pedal(down, duration, SUSTAIN))
     notes = [n for n in notes if n.start < duration and n.end > n.start]
     notes.sort(key=lambda n: (n.start, n.pitch))
@@ -169,7 +170,8 @@ def load_posterior(cfg, set_name, piece_id):
         return None
     z = np.load(f)
     dur = z["dur"].astype(np.int32) if "dur" in z.files else None
-    return z["post"].astype(np.float32), float(z["frame_seconds"]), dur
+    off = float(z["frame_offset"]) if "frame_offset" in z.files else 0.0
+    return z["post"].astype(np.float32), float(z["frame_seconds"]), dur, off
 
 
 def audio_for_set(set_name, piece_id):
@@ -224,7 +226,8 @@ def main():
                         np.savez_compressed(RESULTS / "notes" / f"{cfg}__{set_name}__{m['id']}.post.npz",
                                             post=post.astype(np.float16),
                                             dur=run_engine.last_aux["onset_duration_frames"].astype(np.int16),
-                                            frame_seconds=run_engine.last_aux["frame_seconds"])
+                                            frame_seconds=run_engine.last_aux["frame_seconds"],
+                                            frame_offset=run_engine.last_aux.get("frame_offset", 0.0))
                     res = score(ref_notes, ref_pedals, est_notes, est_pedals, m["seconds"])
                     res["seconds"] = time.perf_counter() - t0
                     cache.write_text(json.dumps(res))

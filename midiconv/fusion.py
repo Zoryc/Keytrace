@@ -44,12 +44,13 @@ def match_notes(ref: list[Note], est: list[Note], tol: float = ONSET_TOLERANCE) 
     return pairs
 
 
-def posterior_at(posterior, frame_seconds: float, pitch: int, t: float, radius: int = 2) -> tuple[float, int]:
+def posterior_at(posterior, frame_seconds: float, pitch: int, t: float, radius: int = 2,
+                 frame_offset: float = 0.0) -> tuple[float, int]:
     """Max of A's onset posterior for `pitch` within +-radius frames of time t, and the frame where it
-    peaks; (0, -1) if unknown."""
+    peaks; (0, -1) if unknown. Frame g of the map is centred at (g + frame_offset) * frame_seconds."""
     if posterior is None or not 21 <= pitch <= 108:
         return 0.0, -1
-    g = int(round(t / frame_seconds))
+    g = int(round(t / frame_seconds - frame_offset))
     lo, hi = max(0, g - radius), min(posterior.shape[0], g + radius + 1)
     if hi <= lo:
         return 0.0, -1
@@ -60,7 +61,7 @@ def posterior_at(posterior, frame_seconds: float, pitch: int, t: float, radius: 
 
 def fuse_notes(a: list[Note], b: list[Note], rule: str = "veto_low_conf", threshold: float = 0.9,
                posterior=None, frame_seconds: float = 1024 / 44100, veto_threshold: float = 0.0,
-               durations=None) -> list[Note]:
+               durations=None, frame_offset: float = 0.0) -> list[Note]:
     """Rules:
       a_only / b_only    one engine alone
       union              A plus every B note A does not have
@@ -89,11 +90,25 @@ def fuse_notes(a: list[Note], b: list[Note], rule: str = "veto_low_conf", thresh
             continue
         out.append(n)
     if rule in ("union", "rescue", "veto_and_rescue", "post_rescue"):
+        # A's own decoded onsets also light up its posterior; a B-only note that close to an A note of
+        # the same pitch is the same key, not a missed one.
+        guard = (2 + 1) * frame_seconds + ONSET_TOLERANCE
+        a_onsets: dict[int, list[float]] = defaultdict(list)
+        for n in a:
+            a_onsets[n.pitch].append(n.start)
+        for v in a_onsets.values():
+            v.sort()
+        import bisect
+
         for j, n in enumerate(b):
             if j in b_matched:
                 continue
             if rule == "post_rescue":
-                p, g = posterior_at(posterior, frame_seconds, n.pitch, n.start)
+                near = a_onsets.get(n.pitch, [])
+                k = bisect.bisect_left(near, n.start - guard)
+                if k < len(near) and near[k] <= n.start + guard:
+                    continue
+                p, g = posterior_at(posterior, frame_seconds, n.pitch, n.start, frame_offset=frame_offset)
                 if p < threshold:
                     continue
                 end = n.end

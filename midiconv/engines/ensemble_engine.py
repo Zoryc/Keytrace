@@ -57,7 +57,8 @@ class EnsembleEngine(Engine):
         threshold = float(opts.get("rescue", 0.3))
         notes = fuse_notes(ta.notes, tb.notes, rule="post_rescue", threshold=threshold,
                            posterior=aux.get("onset_posterior"), durations=aux.get("onset_duration_frames"),
-                           frame_seconds=aux.get("frame_seconds", 1024 / 44100))
+                           frame_seconds=aux.get("frame_seconds", 1024 / 44100),
+                           frame_offset=aux.get("frame_offset", 0.0))
         added = len(notes) - len(ta.notes)
         progress(1.0, "Finishing")
         info = {**a.info, "aria_notes": len(tb.notes), "notes_added_by_aria": added, "rescue": threshold}

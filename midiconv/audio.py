@@ -55,24 +55,43 @@ def load_audio(path: str | Path, max_channels: int = 2) -> Audio:
         stream.thread_type = "AUTO"
 
         resampler = None
+        in_fmt = None  # (rate, layout, format) the current resampler was built for
         chunks: list[np.ndarray] = []
         n_ch = 1
         rate = 0
-        try:
-            for frame in container.decode(stream):
+        bad = good = 0
+
+        def drain(r, frame):
+            for out in r.resample(frame):
+                chunks.append(out.to_ndarray().reshape(-1, n_ch))
+
+        for packet in container.demux(stream):
+            try:
+                frames = packet.decode()
+            except Exception:
+                # Corrupt packet: keep the timeline by filling its duration with silence.
+                bad += 1
+                if rate and packet.duration and packet.time_base:
+                    chunks.append(np.zeros((int(round(float(packet.duration * packet.time_base) * rate)), n_ch),
+                                           dtype=np.float32))
+                continue
+            for frame in frames:
+                fmt = (frame.sample_rate, frame.layout.name, frame.format.name)
                 if resampler is None:
                     rate = frame.sample_rate
                     n_ch = min(max_channels, max(1, len(frame.layout.channels)))
+                elif fmt != in_fmt:  # the stream changed format mid-file: flush, then start a new resampler
+                    drain(resampler, None)
+                    resampler = None
+                if resampler is None:
                     resampler = av.AudioResampler(format="flt", layout="stereo" if n_ch == 2 else "mono", rate=rate)
-                for out in resampler.resample(frame):
-                    chunks.append(out.to_ndarray().reshape(-1, n_ch))
-            if resampler is not None:
-                for out in resampler.resample(None):
-                    chunks.append(out.to_ndarray().reshape(-1, n_ch))
-        except Exception as e:
-            if not chunks:
-                raise AudioError(f"Could not decode the audio ({e.__class__.__name__}).") from e
-            # Truncated/corrupt tail: keep what decoded fine.
+                    in_fmt = fmt
+                drain(resampler, frame)
+                good += 1
+        if resampler is not None:
+            drain(resampler, None)
+        if bad and good == 0:
+            raise AudioError("Could not decode the audio: the file seems to be damaged.")
 
     if not chunks:
         raise AudioError("The audio track is empty.")
