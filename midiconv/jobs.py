@@ -250,7 +250,9 @@ class JobManager:
                       d.get("engine_options", {}), d.get("output_options", {}))
             for k in ("status", "progress", "message", "error", "stats", "created", "finished"):
                 setattr(job, k, d.get(k, getattr(job, k)))
-            job.input_path = Path(d["input_path"]) if d.get("input_path") else None
+            # The input is always saved in the job's folder; rebuild the path from there, so history
+            # moved with the data folder (MIDI Converter -> Keytrace) can still convert again.
+            job.input_path = p.parent / Path(d["input_path"]).name if d.get("input_path") else None
             self._jobs[job.id] = job
 
     def _prune(self) -> None:

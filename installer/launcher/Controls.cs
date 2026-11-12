@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
-namespace MidiConverterLauncher
+namespace KeytraceLauncher
 {
     /// <summary>The app's "Essential" colours (web/styles.css, light theme).</summary>
     internal static class Theme
@@ -45,11 +45,40 @@ namespace MidiConverterLauncher
         {
             foreach (string name in new string[] { "Cascadia Mono", "Consolas" })
             {
-                Font f = new Font(name, size);
+                Font f = TryFont(name, size, FontStyle.Regular);
+                if (f != null) return f;
+            }
+            return new Font(FontFamily.GenericMonospace, size);
+        }
+
+        // The wordmark: "Keytrace" in Sitka Display Semibold, "Key" in ink and "trace" in teal (the web's .wordmark:
+        // font-family "Sitka Display", Sitka, Georgia, serif; font-weight 600).
+        public const string WordmarkHead = "Key";
+        public const string WordmarkTail = "trace";
+        public static readonly Color WordmarkHeadColor = Ink;
+        public static readonly Color WordmarkTailColor = Accent;
+
+        /// <summary>Sitka Display Semibold (Windows 11's variable Sitka), else Sitka Display Bold (Windows 10's Sitka has
+        /// no semibold), else Georgia Bold, like the web's font stack.</summary>
+        public static Font WordmarkFont(float size)
+        {
+            Font f = TryFont("Sitka Display Semibold", size, FontStyle.Regular)
+                  ?? TryFont("Sitka Display", size, FontStyle.Bold)
+                  ?? TryFont("Georgia", size, FontStyle.Bold);
+            return f ?? new Font(FontFamily.GenericSerif, size, FontStyle.Bold);
+        }
+
+        /// <summary>The font, or null when it is not installed (GDI+ would silently substitute another one).</summary>
+        public static Font TryFont(string name, float size, FontStyle style)
+        {
+            try
+            {
+                Font f = new Font(name, size, style);
                 if (string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) return f;
                 f.Dispose();
             }
-            return new Font(FontFamily.GenericMonospace, size);
+            catch (ArgumentException) { } // e.g. a family without that style
+            return null;
         }
     }
 
@@ -263,7 +292,107 @@ namespace MidiConverterLauncher
         }
     }
 
-    /// <summary>The app icon, drawn as vectors (same artwork as the favicon and the .ico), crisp at any DPI.</summary>
+    /// <summary>
+    /// A one-line headline in which the product name is drawn as the Keytrace wordmark (e.g. "Setting up Keytrace").
+    /// The other words use <see cref="Control.Font"/> and <see cref="Control.ForeColor"/>; all runs share one
+    /// baseline, <see cref="Baseline"/> pixels below the top. Drawn with GDI (TextRenderer), which also renders the
+    /// named instances of variable fonts such as Sitka Display Semibold.
+    /// </summary>
+    internal sealed class TitleView : Control
+    {
+        private const TextFormatFlags Flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix |
+                                              TextFormatFlags.SingleLine | TextFormatFlags.NoClipping;
+        private Font wordmarkFont;
+        private int baseline;
+
+        /// <summary>The baseline in pixels from the top; 0: the larger ascent of the two fonts.</summary>
+        public int Baseline
+        {
+            get { return baseline; }
+            set { baseline = value; Invalidate(); }
+        }
+
+        public TitleView()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            SetStyle(ControlStyles.Selectable, false);
+            TabStop = false;
+            AccessibleRole = AccessibleRole.StaticText;
+        }
+
+        public Font WordmarkFont
+        {
+            get { return wordmarkFont; }
+            set { wordmarkFont = value; Invalidate(); }
+        }
+
+        protected override void OnTextChanged(EventArgs e)
+        {
+            base.OnTextChanged(e);
+            AccessibleName = Text; // screen readers read the headline as the Label it replaces did
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.Clear(Parent != null ? Parent.BackColor : Theme.Surface);
+            string text = Text ?? "";
+            Font wm = wordmarkFont ?? Font;
+            int y = baseline > 0 ? baseline : (int)Math.Round(Math.Max(Ascent(g, Font), Ascent(g, wm)));
+            string name = Theme.WordmarkHead + Theme.WordmarkTail;
+            int x = 0;
+            int start = 0;
+            while (true)
+            {
+                int at = text.IndexOf(name, start, StringComparison.Ordinal);
+                x = DrawRun(g, at < 0 ? text.Substring(start) : text.Substring(start, at - start), Font, ForeColor, x, y);
+                if (at < 0) break;
+                x = DrawRun(g, Theme.WordmarkHead, wm, Theme.WordmarkHeadColor, x, y);
+                x = DrawRun(g, Theme.WordmarkTail, wm, Theme.WordmarkTailColor, x, y);
+                start = at + name.Length;
+            }
+        }
+
+        /// <summary>Draw one run so that its baseline is at <paramref name="baseline"/>; returns the x after it.
+        /// Leading and trailing spaces are measured separately (GDI does not count trailing spaces).</summary>
+        private static int DrawRun(Graphics g, string run, Font font, Color color, int x, int baseline)
+        {
+            if (run.Length == 0) return x;
+            string core = run.Trim(' ');
+            int lead = core.Length == 0 ? run.Length : run.IndexOf(core, StringComparison.Ordinal);
+            int trail = run.Length - lead - core.Length;
+            float space = SpaceWidth(g, font);
+            x += (int)Math.Round(lead * space);
+            if (core.Length > 0)
+            {
+                int top = baseline - (int)Math.Round(Ascent(g, font));
+                TextRenderer.DrawText(g, core, font, new Point(x, top), color, Flags);
+                x += TextRenderer.MeasureText(g, core, font, new Size(int.MaxValue, int.MaxValue), Flags).Width;
+            }
+            return x + (int)Math.Round(trail * space);
+        }
+
+        /// <summary>The font's ascent in pixels: the distance from the top of a GDI text cell to the baseline. Read from
+        /// GDI itself, since GDI+'s design metrics differ for some fonts (e.g. the Sitka variable font).</summary>
+        private static float Ascent(Graphics g, Font font)
+        {
+            int gdi = Native.GdiAscent(g, font);
+            if (gdi > 0) return gdi;
+            FontFamily ff = font.FontFamily;
+            return font.SizeInPoints * g.DpiY / 72f * ff.GetCellAscent(font.Style) / ff.GetEmHeight(font.Style);
+        }
+
+        private static float SpaceWidth(Graphics g, Font font)
+        {
+            Size big = new Size(int.MaxValue, int.MaxValue);
+            return TextRenderer.MeasureText(g, "x x", font, big, Flags).Width - TextRenderer.MeasureText(g, "xx", font, big, Flags).Width;
+        }
+    }
+
+    /// <summary>The Keytrace mark, drawn as vectors (the same artwork as the .ico and the web's favicon and header:
+    /// installer/make_icon.py), crisp at any DPI. #2C7567 in both themes.</summary>
     internal sealed class LogoView : Control
     {
         public LogoView()

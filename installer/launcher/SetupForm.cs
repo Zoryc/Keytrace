@@ -5,13 +5,13 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 
-namespace MidiConverterLauncher
+namespace KeytraceLauncher
 {
     /// <summary>
-    /// The setup window: icon + title, a one-line status, a progress bar, "Show details" (the log),
-    /// and Cancel / Retry / Close / Open MIDI Converter. The work runs in SetupWorker on a background
-    /// thread; status, progress and the result are marshalled with BeginInvoke, log lines are queued
-    /// and taken by a 100 ms UI timer.
+    /// The setup window ("Setting up Keytrace"): the mark + a headline with the Keytrace wordmark, a one-line
+    /// status, a progress bar, "Show details" (the log), and Cancel / Retry / Close / Open Keytrace. The work
+    /// runs in SetupWorker on a background thread; status, progress and the result are marshalled with
+    /// BeginInvoke, log lines are queued and taken by a 100 ms UI timer.
     /// </summary>
     internal sealed class SetupForm : Form
     {
@@ -28,6 +28,11 @@ namespace MidiConverterLauncher
         private const int LogFlushMs = 100;
         private const int AutoCloseMs = 1500;
         private const int UnattendedErrorCloseMs = 6000; // --unattended: close after a failure too
+        private const float WordmarkSize = 16f;          // pt; about the cap height of the 14 pt Segoe UI headline
+
+        // Headlines: TitleView draws the product name in them as the wordmark.
+        private const string SettingUpTitle = "Setting up " + Program.ProductName;
+        private const string ReadyTitle = Program.ProductName + " is ready";
 
         private readonly AppPaths paths;
         private readonly bool withAria;
@@ -36,9 +41,10 @@ namespace MidiConverterLauncher
         private readonly SetupMode mode;
         private readonly List<string> appArgs;
         private readonly float scale;
+        private readonly int titleIndent;
 
         private readonly LogoView logo;
-        private readonly Label title;
+        private readonly TitleView title;
         private readonly Label status;
         private readonly SlimProgressBar bar;
         private readonly Label percent;
@@ -81,6 +87,7 @@ namespace MidiConverterLauncher
             SuspendLayout();
             AutoScaleMode = AutoScaleMode.None;
             Font = new Font("Segoe UI", 10f);
+            titleIndent = LabelIndent(Font);
             BackColor = Theme.Surface;
             ForeColor = Theme.Ink;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -92,12 +99,11 @@ namespace MidiConverterLauncher
 
             logo = new LogoView();
 
-            title = new Label();
-            title.AutoSize = false;
-            title.UseMnemonic = false;
+            title = new TitleView();
             title.Font = TitleFont();
+            title.WordmarkFont = Theme.WordmarkFont(WordmarkSize);
             title.ForeColor = Theme.Ink;
-            title.Text = "Setting up MIDI Converter";
+            title.Text = SettingUpTitle;
 
             status = new Label();
             status.AutoSize = false;
@@ -180,17 +186,27 @@ namespace MidiConverterLauncher
 
         private static Font TitleFont()
         {
-            Font f = new Font("Segoe UI Semibold", 14f);
-            if (string.Equals(f.Name, "Segoe UI Semibold", StringComparison.OrdinalIgnoreCase)) return f;
-            f.Dispose();
-            return new Font("Segoe UI", 14f, FontStyle.Bold);
+            return Theme.TryFont("Segoe UI Semibold", 14f, FontStyle.Regular) ?? new Font("Segoe UI", 14f, FontStyle.Bold);
+        }
+
+        /// <summary>How far a Label in this font draws its text from its left edge (TextRenderer's padding), so that the
+        /// headline, which <see cref="TitleView"/> draws without padding, starts where the status text below it starts.</summary>
+        private int LabelIndent(Font font)
+        {
+            Size big = new Size(int.MaxValue, int.MaxValue);
+            using (Graphics g = CreateGraphics()) // the overloads without a device context ignore NoPadding
+            {
+                int padded = TextRenderer.MeasureText(g, "x", font, big, TextFormatFlags.NoPrefix).Width;
+                int bare = TextRenderer.MeasureText(g, "x", font, big, TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Width;
+                return Math.Max(0, (padded - bare) / 2);
+            }
         }
 
         private static Icon LoadAppIcon()
         {
             try
             {
-                Stream s = typeof(SetupForm).Assembly.GetManifestResourceStream("MIDIConverter.ico");
+                Stream s = typeof(SetupForm).Assembly.GetManifestResourceStream(Program.IconResource);
                 if (s != null)
                 {
                     using (s) return new Icon(s);
@@ -209,7 +225,8 @@ namespace MidiConverterLauncher
 
             logo.SetBounds(pad, S(28), S(48), S(48));
             int textX = pad + S(48) + S(16);
-            title.SetBounds(textX, S(25), width - textX - pad, S(32));
+            title.SetBounds(textX + titleIndent, S(18), width - textX - titleIndent - pad, S(38));
+            title.Baseline = S(27); // 45 px below the top of the window at 96 DPI, whichever font is larger
             status.SetBounds(textX, S(58), width - textX - pad, S(44));
 
             int y = S(114);
@@ -272,10 +289,10 @@ namespace MidiConverterLauncher
             closeTimer.Stop();
             state = UiState.Running;
             Outcome = SetupOutcome.None;
-            title.Text = "Setting up MIDI Converter";
+            title.Text = SettingUpTitle;
             status.ForeColor = Theme.Muted;
             status.Text = mode == SetupMode.Repair
-                ? "MIDI Converter needs to finish installing its components."
+                ? Program.ProductName + " needs to finish installing its components."
                 : "Getting ready…";
             bar.FillColor = Theme.Accent;
             bar.Value = 0;
@@ -322,7 +339,7 @@ namespace MidiConverterLauncher
                 case SetupOutcome.Success:
                     state = UiState.Succeeded;
                     Outcome = SetupOutcome.Success;
-                    title.Text = "MIDI Converter is ready";
+                    title.Text = ReadyTitle;
                     status.ForeColor = Theme.Ink2;
                     status.Text = message;
                     bar.Value = 1;
@@ -330,7 +347,7 @@ namespace MidiConverterLauncher
                     taskbar.SetState(Handle, TaskbarProgress.NoProgress);
                     if (mode == SetupMode.Repair)
                     {
-                        status.Text = message + "\nStarting MIDI Converter…";
+                        status.Text = message + "\nStarting " + Program.ProductName + "…";
                         SetButtons(null, null);
                         if (!Program.LaunchApp(paths, appArgs, this)) Outcome = SetupOutcome.Failed;
                         closeTimer.Interval = AutoCloseMs;
@@ -344,7 +361,7 @@ namespace MidiConverterLauncher
                     }
                     else
                     {
-                        SetButtons("Open MIDI Converter", "Close");
+                        SetButtons("Open " + Program.ProductName, "Close");
                     }
                     break;
 
@@ -417,9 +434,9 @@ namespace MidiConverterLauncher
             try
             {
                 answer = MessageBox.Show(this,
-                    "Stop setting up MIDI Converter?\n\n" +
-                    "MIDI Converter can’t be used until its components are installed. " +
-                    "You can finish the setup later by opening MIDI Converter.",
+                    "Stop setting up Keytrace?\n\n" +
+                    "Keytrace can’t be used until its components are installed. " +
+                    "You can finish the setup later by opening Keytrace.",
                     Program.SetupWindowTitle, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             }
             finally

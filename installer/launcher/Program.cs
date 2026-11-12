@@ -1,8 +1,8 @@
-// MIDI Converter launcher ("MIDI Converter.exe").
+// Keytrace launcher ("Keytrace.exe").
 //
-//   MIDI Converter.exe [files...]                   start the app (runtime\Scripts\pythonw.exe -m midiconv),
+//   Keytrace.exe [files...]                         start the app (runtime\Scripts\pythonw.exe -m midiconv),
 //                                                   or finish the setup first if the runtime is not ready
-//   MIDI Converter.exe --setup [--with-aria] [--quiet] [--unattended]
+//   Keytrace.exe --setup [--with-aria] [--quiet] [--unattended]
 //                                                   download Python, PyTorch and the packages;
 //                                                   exit 0 = success, 1 = error, 2 = cancelled
 //                                                   --quiet: close by itself on success
@@ -26,14 +26,15 @@ using System.Windows.Forms;
 // 4.0 compatibility behaviour an assembly without this attribute gets.
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.6.2", FrameworkDisplayName = ".NET Framework 4.6.2")]
 
-namespace MidiConverterLauncher
+namespace KeytraceLauncher
 {
     internal static class Program
     {
-        public const string ProductName = "MIDI Converter";
-        public const string AppUserModelId = "MIDIConverter.Desktop";
-        public const string SetupMutexName = "Local\\MIDIConverter.Setup";
-        public const string SetupWindowTitle = "MIDI Converter Setup";
+        public const string ProductName = "Keytrace";
+        public const string AppUserModelId = "Keytrace.Desktop";       // the app window's and the shortcuts' AppUserModelID
+        public const string SetupMutexName = "Local\\Keytrace.Setup";
+        public const string SetupWindowTitle = "Setting up Keytrace";   // also found by title to bring it to the front
+        public const string IconResource = "Keytrace.ico";              // embedded by build.ps1 (/resource)
         private const string ElevatedRepairFlag = "--elevated-repair";
 
         public const int ExitSuccess = 0;
@@ -70,7 +71,7 @@ namespace MidiConverterLauncher
                 if (unknown.Count > 0)
                 {
                     InitUi();
-                    MessageBox.Show("Unknown option: " + unknown[0] + "\n\nUsage: \"MIDI Converter.exe\" --setup [--with-aria] [--quiet] [--unattended]",
+                    MessageBox.Show("Unknown option: " + unknown[0] + "\n\nUsage: Keytrace.exe --setup [--with-aria] [--quiet] [--unattended]",
                         SetupWindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return ExitError;
                 }
@@ -180,7 +181,7 @@ namespace MidiConverterLauncher
         private static int RunElevatedRepair(AppPaths paths, bool withAria, List<string> appArgs)
         {
             DialogResult answer = MessageBox.Show(
-                "MIDI Converter needs to finish installing its components (about 3 GB).\n\n" +
+                "Keytrace needs to finish installing its components (about 3 GB).\n\n" +
                 "It is installed for all users, so Windows will ask for administrator permission.",
                 SetupWindowTitle, MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
             if (answer != DialogResult.OK) return ExitCancelled;
@@ -209,10 +210,10 @@ namespace MidiConverterLauncher
             if (code != ExitSuccess)
             {
                 MessageBox.Show(
-                    "MIDI Converter could not finish installing its components" +
+                    "Keytrace could not finish installing its components" +
                     (code == ExitError ? "." : " (exit code " + code + ").") + "\n\n" +
                     "The details are in the setup log:\n" + paths.SetupLog + "\n\n" +
-                    "Open MIDI Converter again to retry.",
+                    "Open Keytrace again to retry.",
                     SetupWindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return ExitError;
             }
@@ -264,8 +265,8 @@ namespace MidiConverterLauncher
             catch (Exception e)
             {
                 InitUiSafe();
-                string msg = "MIDI Converter could not be started:\n\n" + e.Message +
-                             "\n\nIf this keeps happening, reinstall MIDI Converter.";
+                string msg = "Keytrace could not be started:\n\n" + e.Message +
+                             "\n\nIf this keeps happening, reinstall Keytrace.";
                 if (owner != null)
                     MessageBox.Show(owner, msg, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 else
@@ -324,7 +325,7 @@ namespace MidiConverterLauncher
             p.DefaultUvCache = Path.Combine(p.Root, ".uv-cache");
             p.SetupLog = Path.Combine(p.Root, "setup.log");
             p.OptionsFile = Path.Combine(p.Root, "setup-options.txt");
-            p.IconFile = Path.Combine(p.Root, "assets\\MIDIConverter.ico");
+            p.IconFile = Path.Combine(p.Root, "assets\\Keytrace.ico");
             return p;
         }
 
@@ -354,7 +355,7 @@ namespace MidiConverterLauncher
             get { return CustomUvCache != null; }
         }
 
-        /// <summary>UV_CACHE_DIR for the setup: MIDICONV_UV_CACHE if set, else {app}\.uv-cache, or %TEMP%\MIDIConverter-uv-cache when that path is too long.</summary>
+        /// <summary>UV_CACHE_DIR for the setup: MIDICONV_UV_CACHE if set, else {app}\.uv-cache, or %TEMP%\Keytrace-uv-cache when that path is too long.</summary>
         public string UvCache
         {
             get
@@ -363,7 +364,7 @@ namespace MidiConverterLauncher
                 if (custom != null) return custom;
                 if (DefaultUvCache.Length <= MaxUvCacheLength) return DefaultUvCache;
                 string temp;
-                try { temp = Path.Combine(Path.GetTempPath(), "MIDIConverter-uv-cache"); }
+                try { temp = Path.Combine(Path.GetTempPath(), "Keytrace-uv-cache"); }
                 catch (Exception) { return DefaultUvCache; }
                 return temp.Length < DefaultUvCache.Length ? temp : DefaultUvCache;
             }
@@ -402,7 +403,7 @@ namespace MidiConverterLauncher
         {
             try
             {
-                File.WriteAllText(OptionsFile, "# Written by MIDI Converter's setup; used when it has to finish the setup again.\r\n" +
+                File.WriteAllText(OptionsFile, "# Written by Keytrace's setup; used when it has to finish the setup again.\r\n" +
                                                "with-aria=" + (withAria ? "1" : "0") + "\r\n", new UTF8Encoding(false));
             }
             catch (Exception) { }

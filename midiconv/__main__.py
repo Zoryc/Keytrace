@@ -1,6 +1,6 @@
 """Entry point.
 
-  python -m midiconv                     open the MIDI Converter app window
+  python -m midiconv                     open the Keytrace app window
   python -m midiconv convert song.mp3 [-o song.mid] [--engine transkun] [--set views=full] [--out pedal=extend]
 """
 from __future__ import annotations
@@ -10,6 +10,8 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+from . import APP_NAME
 
 
 def _kv(items):
@@ -21,11 +23,12 @@ def _kv(items):
 
 
 def convert_cli(argv) -> int:
-    ap = argparse.ArgumentParser(prog="midiconv convert", description="Convert one file without the app window")
-    ap.add_argument("input")
-    ap.add_argument("-o", "--output")
-    ap.add_argument("--instrument", default="piano")
-    ap.add_argument("--engine")
+    ap = argparse.ArgumentParser(prog="python -m midiconv convert",
+                                 description=f"{APP_NAME}: convert one piano recording to MIDI without the app window")
+    ap.add_argument("input", help="audio or video file")
+    ap.add_argument("-o", "--output", help="MIDI file to write (default: the input's name with .mid)")
+    ap.add_argument("--instrument", default="piano", help=argparse.SUPPRESS)  # piano is the only one
+    ap.add_argument("--engine", help="ensemble, transkun or aria (default: the best one installed)")
     ap.add_argument("--set", action="append", metavar="KEY=VALUE", help="engine option")
     ap.add_argument("--out", action="append", metavar="KEY=VALUE", help="output option")
     args = ap.parse_args(argv)

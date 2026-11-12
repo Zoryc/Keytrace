@@ -1,4 +1,4 @@
-/* MIDI Converter — "Essential" design.
+/* Keytrace — "Essential" design.
    Light, airy, one soft accent (sage teal). Spacing scale: 4 8 12 16 24 32 48 64.
    Every colour is a variable, so the dark palette below only swaps values. */
 
@@ -17,7 +17,8 @@
   --line-2: #edf1ef;
   --line-strong: #cbd5d2;
   --dot: #a5b0ad;
-  --brand: #2c7567;
+  --wordmark-key: #1b2523;    /* the wordmark: "Key" in ink, "trace" in teal */
+  --wordmark-trace: #2c7567;
   --accent: #2c7567;
   --accent-hover: #24655a;
   --accent-press: #1d564c;
@@ -102,6 +103,8 @@
   --line-2: #212b28;
   --line-strong: #3d4b47;
   --dot: #52605c;
+  --wordmark-key: #e4ece9;
+  --wordmark-trace: #5fc0a9;
   --accent: #5fc0a9;
   --accent-hover: #75cdb8;
   --accent-press: #8ad7c4;
@@ -220,10 +223,13 @@ svg { flex: none; }
   flex: none; height: 68px; padding: 0 max(32px, calc((100% - var(--col)) / 2));
   display: flex; align-items: center; justify-content: space-between;
 }
-.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 650; font-size: 15px; letter-spacing: -0.005em; border-radius: 8px; }
-.brand-mark { width: 26px; height: 26px; }
-.brand-mark rect { fill: var(--brand); }   /* the app icon colour, the same in both themes */
-.brand-mark path { stroke: #ffffff; stroke-width: 2.2; stroke-linecap: round; fill: none; }
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; border-radius: 8px; }
+.brand-mark { width: 28px; height: 28px; }   /* the app icon, the same colours in both themes */
+.wordmark {
+  font-family: "Sitka Display", Sitka, Georgia, serif; font-weight: 600; font-size: 23px; line-height: 1;
+  letter-spacing: -0.01em; color: var(--wordmark-key); white-space: nowrap;
+}
+.wordmark-trace { color: var(--wordmark-trace); }
 
 .gpu {
   display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 15px;
@@ -271,36 +277,11 @@ svg { flex: none; }
 body.dragging .drop { border-color: var(--accent); border-style: solid; }
 body.dragging .drop-release { display: grid; }
 
+/* Under the drop target, on the right: the current settings and the Options button. */
 .setline {
-  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap;
-  padding: 18px 8px 0;
+  flex: none; display: flex; align-items: center; justify-content: flex-end; min-height: 34px;
+  padding: 18px 8px 0; box-sizing: content-box;
 }
-.instrument { display: flex; align-items: center; gap: 10px; position: relative; }
-.setline-label { font-size: 14px; color: var(--muted); }
-.inst-btn {
-  height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
-  display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: 14px; color: var(--ink);
-}
-.inst-btn:hover { border-color: var(--line-strong); }
-.inst-btn svg { width: 18px; height: 18px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; }
-.inst-btn svg .fill { fill: var(--accent); stroke: none; }
-.inst-btn .chev { width: 15px; height: 15px; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
-.soon { font-size: 13px; color: var(--muted); }
-.menu {
-  position: absolute; left: 76px; top: calc(100% + 8px); z-index: 30; width: 250px; padding: 6px;
-  background: var(--raised); border-radius: 14px; box-shadow: var(--shadow-lg); border: 1px solid var(--line);
-}
-.menu-item {
-  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left;
-  padding: 9px 10px; border-radius: 9px; border: 0; background: none;
-}
-.menu-item b { display: block; font-weight: 600; font-size: 14px; }
-.menu-item small { display: block; font-size: 12.5px; color: var(--muted); }
-button.menu-item:hover, button.menu-item:focus-visible { background: var(--tint-2); }
-.menu-item svg { width: 18px; height: 18px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.menu-item[aria-checked="false"] svg { visibility: hidden; }
-.soon-item { cursor: default; }
-.soon-item b { color: var(--muted); font-weight: 500; }
 
 .setline-right { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .engine-sum { border: 0; background: none; padding: 6px 8px; margin: -6px -8px; border-radius: 8px; font-size: 14px; color: var(--muted); }

@@ -1,6 +1,9 @@
 # Design directions
 
-Twelve clickable, high-fidelity prototypes of the MIDI Converter interface, built from the same real
+These studies were made when Keytrace was still called MIDI Converter, so the prototypes show that
+name and an instrument picker. Direction 01, Essential, became the app's design.
+
+Twelve clickable, high-fidelity prototypes of the app's interface, built from the same real
 transcription (Schubert, Impromptu Op. 90 No. 4, first 60 s, Ensemble engine) so they compare fairly.
 They are design studies: no backend, nothing here is used by the app.
 

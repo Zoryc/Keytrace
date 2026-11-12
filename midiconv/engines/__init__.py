@@ -1,7 +1,7 @@
-"""Instrument / engine registry.
+"""Engine registry (internal).
 
-To add an instrument: write an Engine subclass (see base.py) and register it below with an
-Instrument entry. The web UI builds its instrument picker and advanced options from this registry.
+Keytrace transcribes piano only: every engine is registered under the one "piano" Instrument entry.
+The web UI builds its engine choices and Options from this registry; it has no instrument picker.
 """
 from __future__ import annotations
 

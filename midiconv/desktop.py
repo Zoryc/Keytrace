@@ -1,4 +1,4 @@
-"""MIDI Converter desktop app: the interface in a native window (Edge WebView2 via pywebview).
+"""Keytrace desktop app: the interface in a native window (Edge WebView2 via pywebview).
 
 The backend (server.py) runs on a background thread, bound to 127.0.0.1 on a random port and
 locked to this window with a per-launch token.
@@ -21,13 +21,13 @@ import threading
 import time
 from pathlib import Path
 
-from . import APP_NAME, __version__
+from . import APP_NAME, __version__, paths
 from .paths import APP_DIR, data_dir
 
-APP_USER_MODEL_ID = "MIDIConverter.Desktop"
-MUTEX_NAME = "MIDIConverter.SingleInstance"
-ICON = next((p for p in (APP_DIR.parent / "assets" / "MIDIConverter.ico",  # installed layout
-                         *sorted((APP_DIR / "installer").rglob("MIDIConverter.ico"))) if p.exists()), None)
+APP_USER_MODEL_ID = "Keytrace.Desktop"  # the same in the installer's shortcuts
+MUTEX_NAME = "Keytrace.SingleInstance"  # the same as the installer's AppMutex
+ICON = next((p for p in (APP_DIR.parent / "assets" / "Keytrace.ico",  # installed layout
+                         *sorted((APP_DIR / "installer").rglob("Keytrace.ico"))) if p.exists()), None)
 log = logging.getLogger("midiconv.desktop")
 _mutex = None
 
@@ -170,18 +170,20 @@ class DesktopApi:
 
 # ---------------------------------------------------------------------------- pages
 # The interface's "Essential" palette (web/styles.css), light and dark: keep in step. BRAND is the
-# app mark's colour (installer/make_icon.py), the same in both themes.
+# app mark's colour (installer/make_icon.py), the same in both themes. The wordmark is "Key" in
+# wm_key and "trace" in wm_trace, in Sitka Display Semibold (as in web/index.html).
 BRAND = "#2C7567"
 PALETTE = {
     False: {"bg": "#F6F8F7", "ink": "#1B2523", "ink2": "#394542", "muted": "#5D6966", "accent": "#2C7567",
-            "tint": "#EAF3F0", "danger": "#B03A3A"},
+            "tint": "#EAF3F0", "danger": "#B03A3A", "wm_key": "#1B2523", "wm_trace": "#2C7567"},
     True: {"bg": "#0F1513", "ink": "#E4ECE9", "ink2": "#C2CDCA", "muted": "#8F9D99", "accent": "#5FC0A9",
-           "tint": "#1A2C28", "danger": "#F0938B"},
+           "tint": "#1A2C28", "danger": "#F0938B", "wm_key": "#E4ECE9", "wm_trace": "#5FC0A9"},
 }
 _MARK = (f'<svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="{BRAND}"/>'
          '<path d="M9 9v14M14 9v14M19 9v14M24 9v14" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'
          '<rect x="11" y="9" width="4" height="8" rx="1.2" fill="#fff"/>'
          '<rect x="20" y="9" width="4" height="8" rx="1.2" fill="#fff"/></svg>')
+_LOGO = f'<div class="logo">{_MARK}<div class="wm">Key<span>trace</span></div></div>'  # mark + wordmark
 
 
 def _page(dark: bool, body: str) -> str:
@@ -193,6 +195,10 @@ font:15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;-webkit-f
 .c{{box-sizing:border-box;height:100%;padding:32px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}}
 .mark{{width:60px;height:60px;margin-bottom:24px}}
 .t{{font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;font-weight:350;font-size:34px;line-height:1.15;letter-spacing:-.015em;max-width:640px}}
+.logo{{display:flex;align-items:center;gap:16px}}
+.logo .mark{{width:52px;height:52px;margin:0}}
+.wm{{font-family:"Sitka Display",Sitka,Georgia,serif;font-weight:600;font-size:46px;line-height:1;letter-spacing:-.01em;color:{c["wm_key"]}}}
+.wm span{{color:{c["wm_trace"]}}}
 .b{{margin-top:28px;width:180px;height:4px;border-radius:2px;background:{c["tint"]};overflow:hidden}}
 .b i{{display:block;width:36%;height:100%;border-radius:2px;background:{c["accent"]};animation:s 1.2s ease-in-out -.45s infinite}}
 @keyframes s{{from{{transform:translateX(-100%)}}to{{transform:translateX(280%)}}}}
@@ -201,16 +207,15 @@ font:15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;-webkit-f
 .d{{margin-top:22px;color:{c["muted"]};font-size:13px;max-width:640px;overflow-wrap:anywhere}}
 .d code{{font:12.5px "Cascadia Mono",Consolas,monospace;color:{c["ink2"]};user-select:all;cursor:text}}
 .x{{display:inline-block;width:8px;height:8px;border-radius:50%;background:{c["danger"]};margin-right:8px;vertical-align:1px}}
-</style></head><body><div class="c">{_MARK}{body}</div></body></html>"""
+</style></head><body><div class="c">{body}</div></body></html>"""
 
 
 def _loading_html(dark: bool) -> str:
-    return _page(dark, f'<div class="t">{APP_NAME}</div><div class="b"><i></i></div>'
-                       '<div class="m" id="m">Starting…</div>')
+    return _page(dark, f'{_LOGO}<div class="b"><i></i></div><div class="m" id="m">Starting…</div>')
 
 
 def _error_html(dark: bool, message: str, log_path: Path) -> str:
-    return _page(dark, f'<div class="t">{html.escape(APP_NAME)} couldn’t start</div>'
+    return _page(dark, f'{_MARK}<div class="t">{html.escape(APP_NAME)} couldn’t start</div>'
                        f'<div class="e"><span class="x"></span>{html.escape(message)}</div>'
                        f'<div class="d">Details are in the log:<br><code>{html.escape(str(log_path))}</code></div>')
 
@@ -272,6 +277,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     log_path = _setup_logging()
     log.info("%s %s starting (python %s)", APP_NAME, __version__, sys.version.split()[0])
+    for line in paths.migration_log:  # what the first data_dir() call did with the old "MIDI Converter" folder
+        log.info("%s", line)
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
     except Exception:
@@ -281,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         import webview
     except Exception as e:  # pragma: no cover
         log.exception("pywebview unavailable")
-        _message_box(f"The app window component could not be loaded ({e}).\n\nRe-run the MIDI Converter setup to repair it.")
+        _message_box(f"The app window component could not be loaded ({e}).\n\nRe-run the {APP_NAME} setup to repair it.")
         return 1
 
     from . import server
@@ -331,7 +338,7 @@ def main(argv: list[str] | None = None) -> int:
         if not httpd.started:
             log.error("backend did not start")
             window.load_html(_error_html(api._dark, "The converter engine did not start. Close the window and "
-                                                   "open MIDI Converter again.", log_path))
+                                                   f"open {APP_NAME} again.", log_path))
             return
         window.load_url(f"http://127.0.0.1:{port}/?token={token}")
         deadline = time.time() + 60  # wait until the page has loaded its settings

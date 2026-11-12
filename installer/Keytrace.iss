@@ -1,17 +1,21 @@
-; MIDI Converter - small online installer (Inno Setup 6).
+; Keytrace - small online installer (Inno Setup 6).
 ;
 ; Build with installer\build.ps1, which stages the files and passes:
-;   /DAppVersion=0.1.0 /DNumVersion=0.1.0.0 /DStageDir=...\build\stage /DOutputDir=...\dist /DIconFile=...\MIDIConverter.ico
+;   /DAppVersion=0.2.0 /DNumVersion=0.2.0.0 /DStageDir=...\build\stage /DOutputDir=...\dist /DIconFile=...\Keytrace.ico
 ;
 ; The setup copies the launcher, uv and the app's source files (~40 MB), then runs
-;   "{app}\MIDI Converter.exe" --setup --quiet [--with-aria] [--unattended (silent installs)]
+;   "{app}\Keytrace.exe" --setup --quiet [--with-aria] [--unattended (silent installs)]
 ; which downloads Python, PyTorch and the packages (~3 GB) in its own window.
 ;
 ; Extra command-line switch: /SKIPRUNTIME  install the files only; the component download then
-; happens the first time MIDI Converter is opened.
+; happens the first time Keytrace is opened.
 ;
-; A first install needs a new or empty folder (or a previous MIDI Converter install): the setup window
+; A first install needs a new or empty folder (or a previous Keytrace install): the setup window
 ; creates, and the uninstaller deletes, folders with generic names there (app, python, runtime, .uv-cache).
+;
+; Keytrace was called "MIDI Converter" up to 0.1.0. The AppId is unchanged, so this setup upgrades such an
+; install in place (in its folder): it removes the old launcher, icon, shortcuts and Explorer verb, and the
+; uninstaller also offers to delete the old user data folder (%LOCALAPPDATA%\MIDI Converter).
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -26,27 +30,39 @@
   #define OutputDir "dist"
 #endif
 #ifndef IconFile
-  #define IconFile "assets\MIDIConverter.ico"
+  #define IconFile "assets\Keytrace.ico"
 #endif
 
-#define AppName "MIDI Converter"
-#define AppExeName "MIDI Converter.exe"
-#define AppUserModelID "MIDIConverter.Desktop"
+#define AppName "Keytrace"
+#define AppExeName "Keytrace.exe"
+#define AppIconName "Keytrace.ico"
+#define AppUserModelID "Keytrace.Desktop"
+; The Explorer verb's registry key (Software\Classes\SystemFileAssociations\<audio|video>\shell\<key>).
+#define VerbKey "Keytrace"
+#define VerbLabel "Convert to MIDI with Keytrace"
+
+; What 0.1.0 ("MIDI Converter") installed under other names: removed when it is upgraded.
+#define LegacyName "MIDI Converter"
+#define LegacyExeName "MIDI Converter.exe"
+#define LegacyIconName "MIDIConverter.ico"
+#define LegacyVerbKey "MIDIConverter"
 
 [Setup]
+; Unchanged since MIDI Converter 0.1.0: Keytrace upgrades it.
 AppId={{297B4DF5-B5E6-4E80-A45C-E0E226FC35DC}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 UninstallDisplayName={#AppName}
-UninstallDisplayIcon={app}\assets\MIDIConverter.ico
+UninstallDisplayIcon={app}\assets\{#AppIconName}
 VersionInfoVersion={#NumVersion}
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#NumVersion}
 VersionInfoProductTextVersion={#AppVersion}
 VersionInfoDescription={#AppName} Setup
 
-; Per-user by default ({localappdata}\Programs\MIDI Converter); the dialog offers "all users" too.
+; Per-user by default ({localappdata}\Programs\Keytrace); the dialog offers "all users" too. An upgrade
+; keeps the folder of the previous install (UsePreviousAppDir), also one named "MIDI Converter".
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 DefaultDirName={autopf}\{#AppName}
@@ -70,14 +86,15 @@ ExtraDiskSpaceRequired=7000000000
 ; {app} is only writable by its owner, so the mitigation adds little here.
 RedirectionGuard=no
 
-; The desktop app holds this mutex while it runs: setup and uninstall ask to close it first.
-AppMutex=MIDIConverter.SingleInstance
-SetupMutex=MIDIConverterSetupMutex
+; The desktop app holds this mutex while it runs: setup and uninstall ask to close it first. The second
+; name is the mutex of MIDI Converter 0.1.0, which may still be running when it is upgraded.
+AppMutex=Keytrace.SingleInstance,MIDIConverter.SingleInstance
+SetupMutex=KeytraceSetupMutex
 
 WizardStyle=modern
 SetupIconFile={#IconFile}
 OutputDir={#OutputDir}
-OutputBaseFilename=MIDI-Converter-Setup-{#AppVersion}
+OutputBaseFilename=Keytrace-Setup-{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 ShowLanguageDialog=no
@@ -93,27 +110,35 @@ ReadyLabel2b=Setup is now ready to install [name] on your computer.%n%nDuring th
 Name: "custom"; Description: "Custom installation"; Flags: iscustom
 
 [Components]
-Name: "main"; Description: "MIDI Converter (downloads about 3 GB of components during setup)"; Types: custom; Flags: fixed
+Name: "main"; Description: "Keytrace (downloads about 3 GB of components during setup)"; Types: custom; Flags: fixed
 Name: "aria"; Description: "Ensemble mode with Aria-AMT, the most accurate setting (downloads ~450 MB more; non-commercial license)"; Types: custom; ExtraDiskSpaceRequired: 1000000000
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
-Name: "contextmenu"; Description: "Add ""Convert to MIDI"" to the right-click menu of audio and video files"; GroupDescription: "Additional shortcuts:"
+Name: "contextmenu"; Description: "Add ""{#VerbLabel}"" to the right-click menu of audio and video files"; GroupDescription: "Additional shortcuts:"
 
 [Registry]
+; MIDI Converter 0.1.0's verb ("Convert to MIDI"), which started the old launcher: removed on every install.
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\audio\shell\{#LegacyVerbKey}"; ValueType: none; Flags: deletekey
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\video\shell\{#LegacyVerbKey}"; ValueType: none; Flags: deletekey
 ; Explorer verb for every file Windows perceives as audio or video ("Show more options" on Windows 11).
-Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\audio\shell\MIDIConverter"; ValueType: string; ValueName: ""; ValueData: "Convert to MIDI"; Flags: uninsdeletekey; Tasks: contextmenu
-Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\audio\shell\MIDIConverter"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\assets\MIDIConverter.ico"""; Tasks: contextmenu
-Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\audio\shell\MIDIConverter\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""; Tasks: contextmenu
-Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\video\shell\MIDIConverter"; ValueType: string; ValueName: ""; ValueData: "Convert to MIDI"; Flags: uninsdeletekey; Tasks: contextmenu
-Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\video\shell\MIDIConverter"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\assets\MIDIConverter.ico"""; Tasks: contextmenu
-Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\video\shell\MIDIConverter\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\audio\shell\{#VerbKey}"; ValueType: string; ValueName: ""; ValueData: "{#VerbLabel}"; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\audio\shell\{#VerbKey}"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\assets\{#AppIconName}"""; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\audio\shell\{#VerbKey}\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\video\shell\{#VerbKey}"; ValueType: string; ValueName: ""; ValueData: "{#VerbLabel}"; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\video\shell\{#VerbKey}"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\assets\{#AppIconName}"""; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\video\shell\{#VerbKey}\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""; Tasks: contextmenu
 
 [InstallDelete]
 ; Start from a clean copy of the app's code on upgrades (keeps runtime, python and models).
 Type: filesandordirs; Name: "{app}\app\midiconv"
 Type: filesandordirs; Name: "{app}\app\web"
 Type: filesandordirs; Name: "{app}\app\scripts"
+; Upgrade from MIDI Converter 0.1.0: its launcher, icon and shortcuts (the new ones are named Keytrace).
+Type: files; Name: "{app}\{#LegacyExeName}"
+Type: files; Name: "{app}\assets\{#LegacyIconName}"
+Type: files; Name: "{autoprograms}\{#LegacyName}.lnk"
+Type: files; Name: "{autodesktop}\{#LegacyName}.lnk"
 
 [Files]
 Source: "{#StageDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -122,15 +147,15 @@ Source: "{#StageDir}\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion re
 Source: "{#StageDir}\app\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\assets\MIDIConverter.ico"; AppUserModelID: "{#AppUserModelID}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\assets\MIDIConverter.ico"; AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\assets\{#AppIconName}"; AppUserModelID: "{#AppUserModelID}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\assets\{#AppIconName}"; AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: postinstall skipifsilent nowait
 
 [UninstallDelete]
 ; What the setup window and the app created next to the installed files. runtime, python and .uv-cache
-; are removed in [Code] (RemoveSetupFolder), and only when they carry the marks of MIDI Converter's setup.
+; are removed in [Code] (RemoveSetupFolder), and only when they carry the marks of Keytrace's setup.
 ; Only the app's own subfolders of {app}\app are removed (with the __pycache__ folders Python adds).
 Type: filesandordirs; Name: "{app}\app\midiconv"
 Type: filesandordirs; Name: "{app}\app\web"
@@ -146,8 +171,8 @@ Type: dirifempty; Name: "{app}"
 
 [Code]
 const
-  ContextMenuAudioKey = 'Software\Classes\SystemFileAssociations\audio\shell\MIDIConverter';
-  ContextMenuVideoKey = 'Software\Classes\SystemFileAssociations\video\shell\MIDIConverter';
+  ContextMenuAudioKey = 'Software\Classes\SystemFileAssociations\audio\shell\{#VerbKey}';
+  ContextMenuVideoKey = 'Software\Classes\SystemFileAssociations\video\shell\{#VerbKey}';
 
 var
   DeleteUserData: Boolean;
@@ -183,15 +208,16 @@ begin
   end;
 end;
 
-{ A MIDI Converter install, possibly without its uninstall entry (e.g. a broken earlier install). }
+{ A Keytrace (or MIDI Converter 0.1.0) install, possibly without its uninstall entry (e.g. a broken earlier install). }
 function LooksLikeOurInstall(const Dir: String): Boolean;
 begin
-  Result := FileExists(AddBackslash(Dir) + '{#AppExeName}') and FileExists(AddBackslash(Dir) + 'tools\uv.exe');
+  Result := (FileExists(AddBackslash(Dir) + '{#AppExeName}') or FileExists(AddBackslash(Dir) + '{#LegacyExeName}'))
+            and FileExists(AddBackslash(Dir) + 'tools\uv.exe');
 end;
 
-{ True when Dir is a folder with other files in it: not new, not empty, not a MIDI Converter install.
+{ True when Dir is a folder with other files in it: not new, not empty, not a Keytrace install.
   The setup window creates, and the uninstaller deletes, folders with generic names in the install
-  folder (app, python, runtime, .uv-cache), so MIDI Converter must not share its folder with anything else. }
+  folder (app, python, runtime, .uv-cache), so Keytrace must not share its folder with anything else. }
 function IsForeignNonEmptyDir(const Dir: String): Boolean;
 var
   D: String;
@@ -221,7 +247,7 @@ begin
       Suggested := AddBackslash(Dir) + '{#AppName}';
       Log('The selected folder is not empty: ' + Dir);
       MsgBox('The folder' + #13#10 + Dir + #13#10 + 'already contains other files.' + #13#10#13#10 +
-             'MIDI Converter needs a folder of its own: it creates folders named app, python and runtime in it, ' +
+             'Keytrace needs a folder of its own: it creates folders named app, python and runtime in it, ' +
              'and deletes them again when it is uninstalled.' + #13#10#13#10 +
              'Setup has changed the folder to' + #13#10 + Suggested + #13#10 +
              'Click Next to use it, or choose another new or empty folder.', mbError, MB_OK);
@@ -239,7 +265,7 @@ begin
   Dir := RemoveBackslashUnlessRoot(WizardDirValue);
   if IsForeignNonEmptyDir(Dir) then
   begin
-    Result := 'The folder ' + Dir + ' already contains other files. MIDI Converter needs a new or empty folder ' +
+    Result := 'The folder ' + Dir + ' already contains other files. Keytrace needs a new or empty folder ' +
               '(for example ' + AddBackslash(Dir) + '{#AppName}), because it creates folders named app, python ' +
               'and runtime in it and deletes them again when it is uninstalled.';
     Log('Not installing: ' + Result);
@@ -259,7 +285,7 @@ begin
   else
     Value := '0';
   if SaveStringToFile(ExpandConstant('{app}\setup-options.txt'),
-       '# Written by MIDI Converter''s setup; used when it has to finish the setup again.' + #13#10 +
+       '# Written by Keytrace''s setup; used when it has to finish the setup again.' + #13#10 +
        'with-aria=' + Value + #13#10, False) then
     Log('setup-options.txt: with-aria=' + Value)
   else
@@ -316,7 +342,7 @@ begin
     Params := Params + ' --unattended';
 
   WizardForm.StatusLabel.Caption := 'Downloading Python, PyTorch and the app components (about 3 GB)...';
-  WizardForm.FilenameLabel.Caption := 'Progress is shown in the MIDI Converter Setup window. This can take a while.';
+  WizardForm.FilenameLabel.Caption := 'Progress is shown in the "Setting up Keytrace" window. This can take a while.';
   WizardForm.ProgressGauge.Style := npbstMarquee;
   try
     Log('Running: "' + ExpandConstant('{app}\{#AppExeName}') + '" ' + Params);
@@ -335,20 +361,20 @@ begin
   if not Started then
   begin
     Log('Could not start the component setup: ' + SysErrorMessage(ResultCode));
-    Msg := 'Setup could not start the download of MIDI Converter''s components (Python and PyTorch).';
+    Msg := 'Setup could not start the download of Keytrace''s components (Python and PyTorch).';
   end
   else if ResultCode = 2 then
   begin
     Log('Component setup cancelled by the user.');
-    Msg := 'The download of MIDI Converter''s components (Python and PyTorch) was cancelled.';
+    Msg := 'The download of Keytrace''s components (Python and PyTorch) was cancelled.';
   end
   else
   begin
     Log(Format('Component setup failed with exit code %d.', [ResultCode]));
-    Msg := 'MIDI Converter''s components (Python and PyTorch) could not be downloaded.';
+    Msg := 'Keytrace''s components (Python and PyTorch) could not be downloaded.';
   end;
   Msg := Msg + #13#10#13#10 +
-    'MIDI Converter is installed. It will finish the setup the next time you open it.' + #13#10 +
+    'Keytrace is installed. It will finish the setup the next time you open it.' + #13#10 +
     'Details are in ' + ExpandConstant('{app}\setup.log') + '.';
   Log(Msg);
   { A silent install must not wait for a click (the launcher's window already closed by itself). }
@@ -375,7 +401,7 @@ begin
         Log('Could not delete ' + Marker);
     end;
     if HasSwitch('/SKIPRUNTIME') then
-      Log('/SKIPRUNTIME: skipping the component download; it runs the next time MIDI Converter is opened.')
+      Log('/SKIPRUNTIME: skipping the component download; it runs the next time Keytrace is opened.')
     else
       RunComponentSetup;
   end;
@@ -471,14 +497,35 @@ begin
   if Ours then
     RemoveTree(Dir)
   else
-    Log('Kept ' + Dir + ': it was not created by MIDI Converter''s setup.');
+    Log('Kept ' + Dir + ': it was not created by Keytrace''s setup.');
+end;
+
+{ User data: the app's folder, and MIDI Converter 0.1.0's folder, which the app moves to the new one when it
+  first starts (a copy can leave it behind, and an install that was never opened again still has it). }
+function UserDataDir: String;
+begin
+  Result := ExpandConstant('{localappdata}\{#AppName}');
+end;
+
+function LegacyUserDataDir: String;
+begin
+  Result := ExpandConstant('{localappdata}\{#LegacyName}');
+end;
+
+procedure DeleteUserDataDir(const Dir: String);
+begin
+  if not DirExists(Dir) then
+    Exit;
+  if DelTree(Dir, True, True, True) then
+    Log('Deleted ' + Dir)
+  else
+    Log('Could not delete ' + Dir);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  DataDir: String;
+  Folders: String;
 begin
-  DataDir := ExpandConstant('{localappdata}\MIDI Converter');
   if CurUninstallStep = usUninstall then
   begin
     { runtime first: its pyvenv.cfg is what identifies it, and it links into python. }
@@ -487,15 +534,18 @@ begin
     RemoveSetupFolder('.uv-cache');
     RemoveTree(ExpandConstant('{app}\app\models\aria-amt'));
     DeleteUserData := False;
-    if DirExists(DataDir) and not UninstallSilent then
-      DeleteUserData := MsgBox('Do you also want to delete your MIDI Converter conversion history and settings?' + #13#10#13#10 +
-                               DataDir, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+    Folders := '';
+    if DirExists(UserDataDir) then
+      Folders := Folders + #13#10 + UserDataDir;
+    if DirExists(LegacyUserDataDir) then
+      Folders := Folders + #13#10 + LegacyUserDataDir;
+    if (Folders <> '') and not UninstallSilent then
+      DeleteUserData := MsgBox('Do you also want to delete your Keytrace conversion history and settings?' + #13#10 +
+                               Folders, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   end
   else if (CurUninstallStep = usPostUninstall) and DeleteUserData then
   begin
-    if DelTree(DataDir, True, True, True) then
-      Log('Deleted ' + DataDir)
-    else
-      Log('Could not delete ' + DataDir);
+    DeleteUserDataDir(UserDataDir);
+    DeleteUserDataDir(LegacyUserDataDir);
   end;
 end;

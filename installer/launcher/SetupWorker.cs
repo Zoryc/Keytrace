@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace MidiConverterLauncher
+namespace KeytraceLauncher
 {
     internal enum SetupOutcome
     {
@@ -69,7 +69,7 @@ namespace MidiConverterLauncher
         {
             Thread t = new Thread(Run);
             t.IsBackground = true;
-            t.Name = "MIDI Converter setup";
+            t.Name = "Keytrace setup";
             t.Start();
         }
 
@@ -105,9 +105,9 @@ namespace MidiConverterLauncher
                 DeleteFile(paths.ReadyMarker);
 
                 if (!File.Exists(paths.Uv))
-                    throw new SetupException("A file of MIDI Converter is missing (tools\\uv.exe). Please reinstall MIDI Converter.");
+                    throw new SetupException("A file of Keytrace is missing (tools\\uv.exe). Please reinstall Keytrace.");
                 if (!File.Exists(paths.SetupScript))
-                    throw new SetupException("A file of MIDI Converter is missing (app\\scripts\\setup_runtime.py). Please reinstall MIDI Converter.");
+                    throw new SetupException("A file of Keytrace is missing (app\\scripts\\setup_runtime.py). Please reinstall Keytrace.");
 
                 SetStatus("Downloading Python");
                 SetProgress(0.0);
@@ -119,7 +119,7 @@ namespace MidiConverterLauncher
                 SetStatus("Preparing the Python environment");
                 code = RunStep(paths.Uv, new string[] { "venv", paths.Runtime, "--python", PythonVersion, "--allow-existing", "--no-project" }, null);
                 if (code != 0 || !File.Exists(paths.RuntimePython))
-                    throw new SetupException("The Python environment for MIDI Converter could not be created.");
+                    throw new SetupException("The Python environment for Keytrace could not be created.");
                 SetProgress(VenvDone);
 
                 SetStatus("Installing components");
@@ -140,7 +140,7 @@ namespace MidiConverterLauncher
 
                 SetProgress(1.0);
                 outcome = SetupOutcome.Success;
-                message = proto.Done ?? "MIDI Converter is ready.";
+                message = proto.Done ?? "Keytrace is ready.";
             }
             catch (OperationCanceledException)
             {
@@ -354,7 +354,7 @@ namespace MidiConverterLauncher
         public static SetupLogFile Open(string preferred)
         {
             SetupLogFile log = new SetupLogFile();
-            string[] candidates = { preferred, Path.Combine(Path.GetTempPath(), "MIDI Converter setup.log") };
+            string[] candidates = { preferred, Path.Combine(Path.GetTempPath(), "Keytrace setup.log") };
             foreach (string path in candidates)
             {
                 try

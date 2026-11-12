@@ -1,4 +1,4 @@
-"""Install MIDI Converter's Python packages into the app's runtime venv (standard library only).
+"""Install Keytrace's Python packages into the app's runtime venv (standard library only).
 
 Run by the installer's setup window, with the freshly created venv's python:
   runtime\\Scripts\\python.exe app\\scripts\\setup_runtime.py --uv tools\\uv.exe [--with-aria]
@@ -230,7 +230,7 @@ def main() -> int:
             shutil.rmtree(cache, ignore_errors=True)
 
     device = "your NVIDIA GPU" if out.stdout.startswith("CUDA") else "the CPU (no compatible NVIDIA GPU found)"
-    say("DONE", f"MIDI Converter is ready and will run on {device}.")
+    say("DONE", f"Keytrace is ready and will run on {device}.")
     return 0
 
 

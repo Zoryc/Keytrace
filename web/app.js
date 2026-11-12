@@ -67,7 +67,7 @@ const IC = {
 
 const state = {
   info: null,
-  instrument: 'piano',
+  instrument: 'piano', // Keytrace is a piano app: the one entry of the backend's registry
   settings: loadSettings(),
   job: null, // job currently shown (progress or result)
   es: null,
@@ -238,7 +238,6 @@ function show(view) {
   const names = { viewDrop: 'home', viewProgress: 'progress', viewResult: 'result' };
   for (const v of Object.keys(names)) $(v).hidden = v !== view;
   $('app').dataset.view = names[view];
-  closeMenu();
   if (view !== 'viewResult') { player.stop(); setPlaying(false); }
   if (view === 'viewResult') requestAnimationFrame(() => roll._resize());
 }
@@ -291,48 +290,7 @@ function resetSaved() {
   $('saveLabel').textContent = 'Save MIDI';
 }
 
-// ------------------------------------------------------------------ home: instrument + settings line
-function renderPicker() {
-  $('instName').textContent = instrumentInfo().name;
-  const menu = $('instMenu');
-  menu.innerHTML = '';
-  for (const inst of state.info.instruments) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'menu-item';
-    b.setAttribute('role', 'menuitemradio');
-    b.setAttribute('aria-checked', String(inst.id === state.instrument));
-    b.innerHTML = `<span><b>${esc(inst.name)}</b><small>${esc(String(inst.description || '').replace(/\.$/, ''))}</small></span>${IC.check}`;
-    b.onclick = (e) => {
-      e.stopPropagation();
-      closeMenu(true);
-      if (inst.id === state.instrument) return;
-      state.instrument = inst.id;
-      state.settings.instrument = inst.id;
-      saveSettings();
-      renderAll();
-    };
-    menu.append(b);
-  }
-  const soon = document.createElement('div');
-  soon.className = 'menu-item soon-item';
-  soon.setAttribute('role', 'menuitem');
-  soon.setAttribute('aria-disabled', 'true');
-  soon.innerHTML = '<span><b>More instruments</b><small>Coming soon</small></span>';
-  menu.append(soon);
-}
-function openMenu() {
-  $('instMenu').hidden = false;
-  $('instBtn').setAttribute('aria-expanded', 'true');
-  ($('instMenu').querySelector('[aria-checked="true"]') || $('instMenu').querySelector('button'))?.focus();
-}
-function closeMenu(focusButton = false) {
-  if ($('instMenu').hidden) return;
-  $('instMenu').hidden = true;
-  $('instBtn').setAttribute('aria-expanded', 'false');
-  if (focusButton) $('instBtn').focus();
-}
-
+// ------------------------------------------------------------------ home: settings line
 function renderSettingsLine() {
   const eng = currentEngine();
   const q = qualityOf();
@@ -347,7 +305,6 @@ function renderSettingsLine() {
 }
 
 function renderAll() {
-  renderPicker();
   renderSettingsLine();
   renderDrawer();
 }
@@ -688,7 +645,6 @@ function openDrawer(e) {
   if (!state.info) return;
   state.opener = e?.currentTarget instanceof HTMLElement ? e.currentTarget : document.activeElement;
   state.more = false;
-  closeMenu();
   const d = $('drawer');
   d.hidden = false;
   d.inert = false;
@@ -1226,22 +1182,6 @@ function bind() {
     if (f) startConversion(f);
   });
 
-  $('instBtn').onclick = (e) => { e.stopPropagation(); if ($('instMenu').hidden) openMenu(); else closeMenu(); };
-  document.addEventListener('click', (e) => { if (!$('instMenu').contains(e.target)) closeMenu(); });
-  $('instMenu').addEventListener('keydown', (e) => {
-    const items = [...$('instMenu').querySelectorAll('button')];
-    const i = items.indexOf(document.activeElement);
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      closeMenu(true);
-    } else if (e.key === 'Tab') {
-      closeMenu();
-    }
-  });
-
   $('openAdvanced').onclick = openDrawer;
   $('settingsLine').onclick = openDrawer;
   $('optsResult').onclick = openDrawer;
@@ -1299,7 +1239,6 @@ function bind() {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && drawerOpen()) { e.preventDefault(); closeDrawer(); return; }
-    if (e.key === 'Escape' && !$('instMenu').hidden) { closeMenu(true); return; }
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName);
     if (e.code === 'Space' && !typing && !$('viewResult').hidden && !drawerOpen()) {
       e.preventDefault();
@@ -1315,14 +1254,13 @@ async function init() {
   try {
     state.info = await (await fetch('/api/info')).json();
   } catch {
-    document.body.innerHTML = '<p style="padding:40px;font:16px var(--font);color:var(--ink)">The converter engine is not responding. Close MIDI Converter and open it again.</p>';
+    document.body.innerHTML = '<p style="padding:40px;font:16px var(--font);color:var(--ink)">The converter engine is not responding. Close Keytrace and open it again.</p>';
     return;
   }
   const saved = await savedReq;
   if (saved && typeof saved === 'object' && Object.keys(saved).length) state.settings = saved;
   state.settingsLoaded = true;
   applyAppearance();
-  if (state.settings.instrument && state.info.instruments.some((i) => i.id === state.settings.instrument)) state.instrument = state.settings.instrument;
   const dev = state.info.device;
   const gpu = dev.kind === 'gpu';
   $('device').hidden = false;

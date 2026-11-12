@@ -1,7 +1,9 @@
-"""Draw the MIDI Converter icon (installer/assets/MIDIConverter.ico) with Pillow.
+"""Draw the Keytrace icon (installer/assets/Keytrace.ico) with Pillow.
 
-Same artwork as the favicon in web/index.html: a #2C7567 ("Essential" teal) rounded square with white piano keys
-(32 x 32 viewBox: rx 8, four 2.4-wide round-capped strokes, two 4 x 8 black-key blocks).
+The Keytrace mark, the one used everywhere (the favicon and header in web/index.html as inline SVG, the setup
+window's LogoView in launcher/Controls.cs): a #2C7567 ("Essential" teal, in both themes) rounded square with
+white piano keys (32 x 32 viewBox: rx 8, four 2.4-wide round-capped strokes from y 9 to 23, two 4 x 8 black-key
+blocks at x 11 and 20, rx 1.2).
 
 Each size is rendered at 8x and downsampled, so small sizes stay crisp. The ICO uses 32-bit
 BMP entries up to 64 px (read by every Windows API and .NET's Icon class) and PNG entries for
@@ -85,7 +87,7 @@ def write_ico(path: Path, sizes: list[int]) -> None:
 
 
 def main(argv: list[str]) -> int:
-    out = Path(__file__).resolve().parent / "assets" / "MIDIConverter.ico"
+    out = Path(__file__).resolve().parent / "assets" / "Keytrace.ico"
     preview = None
     args = list(argv)
     if "--png" in args:

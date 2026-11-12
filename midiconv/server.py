@@ -73,7 +73,7 @@ async def _guard(request: Request, call_next):
         resp.set_cookie(SESSION_COOKIE, _token, httponly=True, samesite="strict")
         return resp
     if not secrets.compare_digest(request.cookies.get(SESSION_COOKIE, ""), _token):
-        return PlainTextResponse("MIDI Converter is a desktop app: open it from the Start menu.", status_code=403)
+        return PlainTextResponse(f"{APP_NAME} is a desktop app: open it from the Start menu.", status_code=403)
     return await call_next(request)
 
 

@@ -1,4 +1,4 @@
-"""MIDI Converter: accurate audio-to-MIDI transcription with a local web front end."""
+"""Keytrace: accurate piano-to-MIDI transcription with a local web front end."""
 
-APP_NAME = "MIDI Converter"
-__version__ = "0.1.0"
+APP_NAME = "Keytrace"
+__version__ = "0.2.0"

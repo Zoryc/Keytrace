@@ -1,10 +1,8 @@
-# MIDI Converter
+# Keytrace
 
-> "MIDI Converter" is a working name.
+Keytrace is a piano transcription app for Windows. It turns **solo piano recordings into MIDI files**, as accurately as current research allows, and runs locally on your NVIDIA graphics card.
 
-A Windows desktop app that turns **solo piano recordings into MIDI files**, as accurately as current research allows. It runs locally on your NVIDIA graphics card.
-
-- **Drop a file and get a MIDI.** It reads MP3, WAV, FLAC, M4A/AAC, OGG/Opus, WMA and AIFF, plus the audio track of video files (MP4, MKV, MOV, WebM). You can also right-click a file in Explorer and choose **Convert to MIDI**.
+- **Drop a file and get a MIDI.** It reads MP3, WAV, FLAC, M4A/AAC, OGG/Opus, WMA and AIFF, plus the audio track of video files (MP4, MKV, MOV, WebM). You can also right-click a file in Explorer and choose **Convert to MIDI with Keytrace**.
 - **State-of-the-art piano transcription.** It writes the notes, how hard each key was struck (velocity), the sustain pedal and the soft pedal.
 - **Check before you save.** The result appears as a piano roll and plays on a sampled grand piano. An Original / Both / MIDI switch lets you compare it with the recording.
 - **Advanced options** are in their own panel:
@@ -15,17 +13,16 @@ A Windows desktop app that turns **solo piano recordings into MIDI files**, as a
   - MIDI tempo.
 
   MIDI-file options update the open result instantly, without converting again.
-- **Ready for more instruments.** Piano is the first one. Engines are plug-ins, and the app builds its instrument list and options from them.
 
 ## Install
 
-Run `MIDI-Converter-Setup-<version>.exe` (about 31 MB). It installs for your user only, so it needs no administrator rights.
+Run `Keytrace-Setup-<version>.exe` (about 31 MB). It installs for your user only, so it needs no administrator rights.
 
 Setup then opens a progress window and downloads what the app needs: Python, the GPU version of PyTorch and the transcription models.
 
 | Component | Download | Notes |
 |---|---|---|
-| MIDI Converter (required) | about 2.8 GB | Python 3.13, PyTorch with CUDA 12.8, Transkun V2 |
+| Keytrace (required) | about 2.8 GB | Python 3.13, PyTorch with CUDA 12.8, Transkun V2 |
 | Ensemble mode with Aria-AMT (on by default) | about 450 MB | the most accurate setting; its model weights are licensed for non-commercial use |
 
 **Requirements:**
@@ -34,15 +31,17 @@ Setup then opens a progress window and downloads what the app needs: Python, the
 - About 8 GB of free disk space.
 - An internet connection during setup.
 
-If the download is interrupted, **MIDI Converter.exe** finishes it the next time you open the app.
+If the download is interrupted, **Keytrace.exe** finishes it the next time you open the app.
 
 The installer is not code-signed, so the first time Windows SmartScreen may show "Windows protected your PC". Click **More info**, then **Run anyway**.
 
-Uninstall from Windows Settings → Apps. The uninstaller asks whether to keep your conversion history, which is stored in `%LOCALAPPDATA%\MIDI Converter`.
+Uninstall from Windows Settings → Apps. The uninstaller asks whether to keep your conversion history, which is stored in `%LOCALAPPDATA%\Keytrace`.
+
+Versions before 0.2.0 were called MIDI Converter and kept their history in `%LOCALAPPDATA%\MIDI Converter`. Keytrace moves that folder to `%LOCALAPPDATA%\Keytrace` the first time it starts.
 
 ## Use
 
-1. Open **MIDI Converter** from the Start menu.
+1. Open **Keytrace** from the Start menu.
 2. Drop a recording on the window, or click **choose a file**. Conversion starts right away. A 2-minute piece takes about 20–25 seconds with the default Ensemble engine on an RTX 5070 Ti.
 3. Check the result:
    - Press Space to play.
@@ -93,7 +92,7 @@ Note-onset F1 (%), where a note counts when its pitch is right and its start is 
 ### How it works
 
 1. **Decode.** PyAV, which bundles FFmpeg, reads the file at its native sample rate.
-2. **Transkun V2** ([Yan & Duan, ISMIR 2024](https://github.com/Yujia-Yan/Transkun)) is the primary model. A transformer scores every possible note interval, and a semi-Markov CRF picks the best set exactly. On top of the original, MIDI Converter adds:
+2. **Transkun V2** ([Yan & Duan, ISMIR 2024](https://github.com/Yujia-Yan/Transkun)) is the primary model. A transformer scores every possible note interval, and a semi-Markov CRF picks the best set exactly. On top of the original, Keytrace adds:
    - averaging over four stereo views;
    - a fix for an upstream bug that cut long pedal presses where analysis windows meet;
    - full 32-bit precision and the highest-quality resampling;
@@ -153,21 +152,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
 
 | Path | What |
 |---|---|
-| `midiconv/engines/` | engines (`transkun_engine.py`, `aria_engine.py`, `ensemble_engine.py`) and the instrument registry |
+| `midiconv/` | the app's Python package (it keeps its original name, `midiconv`) |
+| `midiconv/engines/` | the piano engines (`transkun_engine.py`, `aria_engine.py`, `ensemble_engine.py`) and their registry |
 | `midiconv/desktop.py` | the app window (pywebview / WebView2), single instance, file hand-off |
 | `midiconv/server.py`, `jobs.py`, `pipeline.py` | local backend for the window: job queue, conversion pipeline |
 | `web/` | the interface (HTML/CSS/JS, no build step) |
 | `bench/` | accuracy benchmark and fusion analysis |
 | `installer/` | Inno Setup script, C# launcher and setup window, build script |
 | `scripts/` | runtime setup, weights and sample downloads |
-
-### Adding an instrument
-
-1. Subclass `midiconv.engines.base.Engine`.
-2. Implement `transcribe(audio, options, progress)` so it returns a `Transcription` (tracks of notes and pedals).
-3. Register the engine in `midiconv/engines/__init__.py` with an `Instrument` entry.
-
-The instrument picker and the engine's Advanced options come from that registry.
 
 ## Credits and licenses
 

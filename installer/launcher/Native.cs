@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace MidiConverterLauncher
+namespace KeytraceLauncher
 {
     internal static class Native
     {
@@ -42,6 +42,52 @@ namespace MidiConverterLauncher
                 SetForegroundWindow(h);
             }
             catch (Exception) { }
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct TEXTMETRIC
+        {
+            public int tmHeight, tmAscent, tmDescent, tmInternalLeading, tmExternalLeading, tmAveCharWidth, tmMaxCharWidth,
+                       tmWeight, tmOverhang, tmDigitizedAspectX, tmDigitizedAspectY;
+            public char tmFirstChar, tmLastChar, tmDefaultChar, tmBreakChar;
+            public byte tmItalic, tmUnderlined, tmStruckOut, tmPitchAndFamily, tmCharSet;
+        }
+
+        [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetTextMetrics(IntPtr hdc, out TEXTMETRIC tm);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+
+        [DllImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeleteObject(IntPtr obj);
+
+        /// <summary>The font's ascent in pixels as GDI (TextRenderer) uses it: the baseline is this far below the top
+        /// of the text it draws. -1 if it cannot be read.</summary>
+        public static int GdiAscent(System.Drawing.Graphics g, System.Drawing.Font font)
+        {
+            IntPtr hdc = g.GetHdc();
+            IntPtr hfont = IntPtr.Zero;
+            try
+            {
+                hfont = font.ToHfont();
+                IntPtr old = SelectObject(hdc, hfont);
+                TEXTMETRIC tm;
+                bool ok = GetTextMetrics(hdc, out tm);
+                SelectObject(hdc, old);
+                return ok ? tm.tmAscent : -1;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+            finally
+            {
+                if (hfont != IntPtr.Zero) DeleteObject(hfont);
+                g.ReleaseHdc(hdc);
+            }
         }
     }
 

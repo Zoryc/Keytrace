@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MIDI Converter</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232c7567'/%3E%3Cpath d='M9.5 9v14M14.5 9v14M19.5 9v14M24.5 9v14' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <title>Keytrace</title>
+  <!-- The app mark: the same artwork as the app icon (installer/make_icon.py). -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232C7567'/%3E%3Cpath d='M9 9v14M14 9v14M19 9v14M24 9v14' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='11' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3Crect x='20' y='9' width='4' height='8' rx='1.2' fill='white'/%3E%3C/svg%3E">
   <script>
     // Apply the saved appearance before the first paint, so a dark window never flashes light.
     // The window's origin changes every launch (random port), so the server copy is the one that counts.
@@ -27,12 +28,14 @@
 <body>
   <div class="app" id="app" data-view="home">
     <header class="topbar">
-      <a class="brand" href="#" id="home" aria-label="MIDI Converter, start over">
+      <a class="brand" href="#" id="home" aria-label="Keytrace, start over">
         <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-          <rect width="32" height="32" rx="9"/>
-          <path d="M9.5 9v14M14.5 9v14M19.5 9v14M24.5 9v14"/>
+          <rect width="32" height="32" rx="8" fill="#2C7567"/>
+          <path d="M9 9v14M14 9v14M19 9v14M24 9v14" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+          <rect x="11" y="9" width="4" height="8" rx="1.2" fill="#fff"/>
+          <rect x="20" y="9" width="4" height="8" rx="1.2" fill="#fff"/>
         </svg>
-        <span>MIDI Converter</span>
+        <span class="wordmark" aria-hidden="true">Key<span class="wordmark-trace">trace</span></span>
       </a>
       <div class="gpu" id="device" tabindex="0" hidden>
         <span class="gpu-dot" aria-hidden="true"></span>
@@ -58,16 +61,6 @@
         </label>
 
         <div class="setline">
-          <div class="instrument">
-            <span class="setline-label" id="instLabel">Instrument</span>
-            <button class="inst-btn" id="instBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="instMenu" aria-describedby="instLabel">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M8 5v14M12 5v14M16 5v14"/><path class="fill" d="M6.6 5h2.8v7.5H6.6zM14.6 5h2.8v7.5h-2.8z"/></svg>
-              <span id="instName">Piano</span>
-              <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
-            </button>
-            <span class="soon">More instruments soon</span>
-            <div class="menu" id="instMenu" role="menu" aria-label="Instrument" hidden></div>
-          </div>
           <div class="setline-right">
             <button class="engine-sum" id="settingsLine" type="button" aria-haspopup="dialog" aria-controls="drawer" title="Change in Options"></button>
             <button class="link-btn" id="openAdvanced" type="button" aria-haspopup="dialog" aria-controls="drawer">
