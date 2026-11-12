@@ -4,9 +4,11 @@ Transkun's output is kept as is. A note that only Aria hears is added when Trans
 onset posterior at that key and time is at least `threshold`, i.e. Aria only breaks ties where
 Transkun itself was unsure. Added notes get Transkun's most likely key release for that onset.
 
-Measured on 12 MAESTRO test excerpts (bench/fusion.py, threshold picked by leave-one-piece-out
-cross-validation): note-onset F1 +0.19 (clean), +0.18 (MP3), +0.21 (reverb), +0.35 (noise),
-+0.42 (phone), +0.58 (worst case); better on 9-10 of 12 pieces in every condition. Simple union,
+Measured on 12 MAESTRO test excerpts (bench/fusion.py chose the threshold by leave-one-piece-out
+cross-validation; bench/evaluate.py --configs ensemble): note-onset F1 98.38 -> 98.61 (clean),
+98.37 -> 98.59 (MP3), 98.36 -> 98.60 (reverb), 97.74 -> 98.11 (noise), 97.37 -> 97.79 (phone),
+96.00 -> 96.62 (worst case); better on 7-9 of 12 pieces in every condition, worse on at most one.
+Note ends and pedal-sustained lengths improve too; velocity is unchanged. Simple union,
 intersection or confidence-veto rules did not help.
 """
 from __future__ import annotations

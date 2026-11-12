@@ -43,7 +43,7 @@ Uninstall from Windows Settings → Apps. The uninstaller asks whether to keep y
 ## Use
 
 1. Open **MIDI Converter** from the Start menu.
-2. Drop a recording on the window, or click **choose a file**. Conversion starts right away. A 2-minute piece takes about half a minute with the default Ensemble engine on an RTX 5070 Ti.
+2. Drop a recording on the window, or click **choose a file**. Conversion starts right away. A 2-minute piece takes about 20–25 seconds with the default Ensemble engine on an RTX 5070 Ti.
 3. Check the result:
    - Press Space to play.
    - Switch between **Original**, **Both** and **MIDI**.
@@ -83,9 +83,9 @@ Note-onset F1 (%), where a note counts when its pitch is right and its start is 
 | Transkun V2, paper settings | 98.36 | 98.30 | 97.14 | 98.30 | 97.69 | 96.14 |
 | Transkun V2, stereo views (this app) | 98.38 | 98.37 | 97.37 | 98.36 | 97.74 | 96.00 |
 | Aria-AMT alone | 97.54 | 97.56 | 95.82 | 97.62 | 96.70 | 89.96 |
-| **Ensemble (this app's default)** | **98.60** | **98.58** | **97.78** | **98.59** | **98.10** | **96.58** |
+| **Ensemble (this app's default)** | **98.61** | **98.59** | **97.79** | **98.60** | **98.11** | **96.62** |
 
-- **Ensemble:** it also improves note ends (by +0.17 to +0.28 points) and sounding lengths with the pedal (by +0.28 to +0.68 points). Velocity is unchanged. Note detection is better on 9–10 of the 12 pieces in every condition.
+- **Ensemble:** it also improves note ends (by +0.18 to +0.30 points) and sounding lengths with the pedal (by +0.30 to +0.73 points). Velocity is unchanged. Note detection is better on 7–9 of the 12 pieces in every condition, worse on at most one, and equal on the rest.
 - **Stereo views:** compared with the paper settings, they improve note-end accuracy on 11 of 12 pieces. On noisy audio they also improve sustain-pedal accuracy by up to 6.6 points.
 - **Where to find the details:** the full tables and the method are in `bench/`. Every rule and threshold was chosen by leave-one-piece-out cross-validation.
 
