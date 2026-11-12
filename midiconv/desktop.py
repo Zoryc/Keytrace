@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import ctypes
 import faulthandler
+import functools
 import html
 import json
 import logging
 import logging.handlers
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -169,21 +171,33 @@ class DesktopApi:
 
 
 # ---------------------------------------------------------------------------- pages
-# The interface's "Essential" palette (web/styles.css), light and dark: keep in step. BRAND is the
-# app mark's colour (installer/make_icon.py), the same in both themes. The wordmark is "Key" in
-# wm_key and "trace" in wm_trace, in Sitka Display Semibold (as in web/index.html).
-BRAND = "#2C7567"
+# The interface's "Essential" palette (web/styles.css), light and dark: keep in step. The wordmark is
+# "Key" in wm_key and "trace" in wm_trace, in Sitka Display Semibold (as in web/index.html).
 PALETTE = {
     False: {"bg": "#F6F8F7", "ink": "#1B2523", "ink2": "#394542", "muted": "#5D6966", "accent": "#2C7567",
             "tint": "#EAF3F0", "danger": "#B03A3A", "wm_key": "#1B2523", "wm_trace": "#2C7567"},
     True: {"bg": "#0F1513", "ink": "#E4ECE9", "ink2": "#C2CDCA", "muted": "#8F9D99", "accent": "#5FC0A9",
            "tint": "#1A2C28", "danger": "#F0938B", "wm_key": "#E4ECE9", "wm_trace": "#5FC0A9"},
 }
-_MARK = (f'<svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="{BRAND}"/>'
-         '<path d="M9 9v14M14 9v14M19 9v14M24 9v14" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'
-         '<rect x="11" y="9" width="4" height="8" rx="1.2" fill="#fff"/>'
-         '<rect x="20" y="9" width="4" height="8" rx="1.2" fill="#fff"/></svg>')
-_LOGO = f'<div class="logo">{_MARK}<div class="wm">Key<span>trace</span></div></div>'  # mark + wordmark
+MARK_SVG = paths.WEB_DIR / "brand" / "keytrace-mark.svg"  # the mark's master for sizes above 24 px
+
+
+@functools.lru_cache(maxsize=1)
+def _mark() -> str:
+    """The Keytrace mark as inline SVG of class "mark": the master file itself, so these pages show the
+    artwork of the web header and the app icon, in its own colours in both themes. Empty (no mark) if
+    the file cannot be read."""
+    try:
+        svg = MARK_SVG.read_text(encoding="utf-8")
+    except OSError as e:
+        log.warning("Cannot read the mark %s: %s", MARK_SVG, e)
+        return ""
+    svg = re.sub(r">\s+<", "><", re.sub(r"<!--.*?-->", "", svg, flags=re.S).strip())
+    return svg.replace("<svg ", '<svg class="mark" aria-hidden="true" ', 1)
+
+
+def _logo() -> str:
+    return f'<div class="logo">{_mark()}<div class="wm">Key<span>trace</span></div></div>'  # mark + wordmark
 
 
 def _page(dark: bool, body: str) -> str:
@@ -211,11 +225,11 @@ font:15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;-webkit-f
 
 
 def _loading_html(dark: bool) -> str:
-    return _page(dark, f'{_LOGO}<div class="b"><i></i></div><div class="m" id="m">Starting…</div>')
+    return _page(dark, f'{_logo()}<div class="b"><i></i></div><div class="m" id="m">Starting…</div>')
 
 
 def _error_html(dark: bool, message: str, log_path: Path) -> str:
-    return _page(dark, f'{_MARK}<div class="t">{html.escape(APP_NAME)} couldn’t start</div>'
+    return _page(dark, f'{_mark()}<div class="t">{html.escape(APP_NAME)} couldn’t start</div>'
                        f'<div class="e"><span class="x"></span>{html.escape(message)}</div>'
                        f'<div class="d">Details are in the log:<br><code>{html.escape(str(log_path))}</code></div>')
 

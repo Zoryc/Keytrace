@@ -10,13 +10,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
 
 Output: `installer\dist\Keytrace-Setup-<version>.exe`. The version comes from `midiconv/__init__.py`.
 
-Needs: the dev venv (`.venv`, used for `scripts/fetch_piano_samples.py` and, if the icon is missing, `make_icon.py`, which needs Pillow), Inno Setup 6.7+ (`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`) and the .NET Framework C# compiler (`csc.exe`, part of Windows). Override the paths with `-Python`, `-Iscc` and `-Csc`.
+Needs: the dev venv (`.venv`, used for `scripts/fetch_piano_samples.py` and, when the icon must be remade, `make_icon.py`, which needs Pillow and Microsoft Edge), Inno Setup 6.7+ (`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`) and the .NET Framework C# compiler (`csc.exe`, part of Windows). Override the paths with `-Python`, `-Iscc`, `-Csc` and `-Edge`.
 
 The script:
 
 1. Downloads uv 0.13.7 once into `installer\build\cache` and checks its SHA-256.
 2. Fetches the piano samples.
-3. Makes the icon if `installer\assets\Keytrace.ico` is missing.
+3. Makes the icon, `installer\assets\Keytrace.ico`, when it is missing or older than one of the master SVGs or `make_icon.py`.
 4. Stages the files in `installer\build\stage`.
 5. Compiles the launcher.
 6. Runs ISCC.
@@ -30,7 +30,16 @@ It stops on the first error.
 | `build.ps1` | build script (Windows PowerShell 5.1) |
 | `Keytrace.iss` | Inno Setup script |
 | `launcher\*.cs`, `launcher\app.manifest` | `Keytrace.exe`: launcher and setup window (C# 5, .NET Framework 4.x, WinForms) |
-| `make_icon.py`, `assets\Keytrace.ico` | the Keytrace mark as an icon (16 to 256 px); the web's favicon and header use the same artwork |
+| `make_icon.py`, `assets\Keytrace.ico` | the Keytrace mark as an icon (16 to 256 px), rendered from the master SVGs (see below) |
+
+### The mark
+
+The masters are `web\brand\keytrace-mark.svg` (64-unit art, for sizes above 24 px) and `web\brand\keytrace-mark-small.svg` (16-unit art hand-tuned for 16 to 24 px). Everything else derives from them:
+
+- the web's favicon is `brand/keytrace-mark-small.svg` itself, and its header (28 px) an inline copy of `keytrace-mark.svg` in `web\index.html`;
+- the desktop app's loading and error pages inline `keytrace-mark.svg`, read at run time (`midiconv\desktop.py`);
+- `make_icon.py` renders each size of `Keytrace.ico` with headless Edge, at exactly that size on a transparent background: the small art for 16, 20 and 24 px, the full art for 32, 40, 48, 64, 96, 128 and 256 px. It writes one frame per size (32-bit BMP up to 96 px, PNG for 128 and 256 px) and reads the file back with Pillow to check every size and its alpha. `python installer\make_icon.py [out.ico] [--png sheet.png] [--frames DIR]` also writes previews;
+- the setup window draws the frame of `Keytrace.ico` that fits its logo (see below).
 
 ## Installed layout
 
@@ -67,7 +76,7 @@ Keytrace was called "MIDI Converter" up to 0.1.0. The Inno `AppId` is unchanged,
 
   uv builds `proxy-tools` (a pywebview dependency published only as source) inside its cache, about 150 characters below the cache folder. Without Windows long path support the build fails once the cache path is longer than about 109 characters. So when `{app}\.uv-cache` is longer than 90 characters (an install folder deeper than about 80 characters), the launcher uses `%TEMP%\Keytrace-uv-cache` instead. It passes that folder to `setup_runtime.py` as `MIDICONV_UV_CACHE` and removes it at the end. A `MIDICONV_UV_CACHE` you set yourself is used as is, so keep it short.
 
-The setup window's header shows the Keytrace mark and the headline with the wordmark: "Keytrace" in Sitka Display Semibold, "Key" in ink (#1B2523) and "trace" in teal (#2C7567). Windows 10's Sitka has no semibold, so it falls back to Sitka Display Bold, then Georgia Bold.
+The setup window's header shows the Keytrace mark, a frame of `{app}\assets\Keytrace.ico` (else of the copy embedded in `Keytrace.exe`): the 48 px frame at 100%, the 96 px frame at 200%, and at other scales a larger frame scaled down. Then the headline with the wordmark: "Keytrace" in Sitka Display Semibold, "Key" in ink (#1B2523) and "trace" in teal (#2C7567). Windows 10's Sitka has no semibold, so it falls back to Sitka Display Bold, then Georgia Bold.
 
 To look at the setup window without downloading anything, put `Keytrace.exe` (from `installer\build\launcher`) in an empty folder with an `app\scripts\setup_runtime.py` (any content) and a stand-in `tools\uv.exe`: it exits with 0 for `python install`, copies itself to `<dir>\Scripts\python.exe` for `venv <dir>`, and otherwise (as the runtime's python) prints `@@STATUS` and `@@PROGRESS` lines, then waits, or writes `runtime\midiconv-ready.txt` and prints `@@DONE`, or prints `@@ERROR`. Then run `Keytrace.exe --setup` there.
 

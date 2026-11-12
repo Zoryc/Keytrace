@@ -4,14 +4,16 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
 
   Steps: read the version from midiconv\__init__.py, download uv (cached, checksum-verified), fetch the
-  piano samples, make the icon if missing, stage the files, compile the launcher with csc.exe and
-  compile the setup with Inno Setup. Windows PowerShell 5.1 compatible. Stops on the first error.
+  piano samples, make the icon from the master SVGs if it is missing or older than them, stage the files,
+  compile the launcher with csc.exe and compile the setup with Inno Setup. Windows PowerShell 5.1
+  compatible. Stops on the first error.
 #>
 [CmdletBinding()]
 param(
     [string]$Python = '',
     [string]$Iscc = (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
-    [string]$Csc = (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe')
+    [string]$Csc = (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'),
+    [string]$Edge = ''  # msedge.exe for make_icon.py; default: its usual install locations
 )
 
 $ErrorActionPreference = 'Stop'
@@ -141,9 +143,30 @@ if ($oggCount -lt 100) { throw "Only $oggCount piano samples in $pianoDir" }
 Write-Host "    $oggCount samples"
 
 # ---------------------------------------------------------------- icon
+# Keytrace.ico is rendered from the master SVGs of the mark (web\brand) by make_icon.py (headless Edge + Pillow).
+# It is remade when it is missing or older than a master or the script.
 Write-Step 'Icon'
-if (-not (Test-Path -LiteralPath $Icon)) {
-    Invoke-Native $Python @((Join-Path $Installer 'make_icon.py'), $Icon)
+$iconSources = @(
+    (Join-Path $Root 'web\brand\keytrace-mark.svg'),
+    (Join-Path $Root 'web\brand\keytrace-mark-small.svg'),
+    (Join-Path $Installer 'make_icon.py')
+)
+foreach ($src in $iconSources) { Assert-File $src 'Icon source' }
+$iconStale = -not (Test-Path -LiteralPath $Icon -PathType Leaf)
+if (-not $iconStale) {
+    $iconTime = (Get-Item -LiteralPath $Icon).LastWriteTimeUtc
+    $newer = @($iconSources | Where-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc -gt $iconTime })
+    if ($newer.Count -gt 0) {
+        $iconStale = $true
+        Write-Host "    newer than the icon: $(($newer | ForEach-Object { Split-Path -Leaf $_ }) -join ', ')"
+    }
+}
+if ($iconStale) {
+    $iconArgs = @((Join-Path $Installer 'make_icon.py'), $Icon)
+    if ($Edge) { $iconArgs += @('--edge', $Edge) }
+    Invoke-Native $Python $iconArgs
+} else {
+    Write-Host '    up to date'
 }
 Assert-File $Icon 'Icon'
 Write-Host "    $Icon"

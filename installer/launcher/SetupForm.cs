@@ -97,7 +97,7 @@ namespace KeytraceLauncher
             Text = Program.SetupWindowTitle;
             Icon = LoadAppIcon();
 
-            logo = new LogoView();
+            logo = new LogoView(paths.IconFile);
 
             title = new TitleView();
             title.Font = TitleFont();

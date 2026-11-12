@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace KeytraceLauncher
@@ -391,45 +395,213 @@ namespace KeytraceLauncher
         }
     }
 
-    /// <summary>The Keytrace mark, drawn as vectors (the same artwork as the .ico and the web's favicon and header:
-    /// installer/make_icon.py), crisp at any DPI. #2C7567 in both themes.</summary>
+    /// <summary>
+    /// The Keytrace mark, as a frame of Keytrace.ico, which installer/make_icon.py renders from the master SVGs
+    /// (web/brand/) at each of its sizes. The control draws the frame of exactly its size in pixels if the icon has
+    /// one (48 and 96 px: 100% and 200%), else the smallest frame at least twice as large (else the largest),
+    /// scaled down once per size with bicubic filtering, so the mark stays crisp at any DPI. The icon is read from
+    /// {app}\assets\Keytrace.ico, else from the copy embedded in the exe. Its colours are fixed (both themes).
+    /// </summary>
     internal sealed class LogoView : Control
     {
-        public LogoView()
+        private readonly SortedDictionary<int, Bitmap> frames;
+        private Bitmap scaled; // the mark at the control's size, when no frame has that size
+
+        public LogoView(string iconFile)
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             SetStyle(ControlStyles.Selectable, false);
             TabStop = false;
+            frames = IconFrames.FromFile(iconFile);
+            if (frames.Count == 0) frames = IconFrames.FromResource(Program.IconResource);
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            DropScaled();
+            base.OnSizeChanged(e);
+        }
+
+        /// <summary>The frame to draw at <paramref name="size"/> pixels: that size, else the smallest at least
+        /// twice as large (downscaling it is sharper than a small step down), else the largest.</summary>
+        private Bitmap Source(int size)
+        {
+            Bitmap exact;
+            if (frames.TryGetValue(size, out exact)) return exact;
+            Bitmap best = null;
+            foreach (KeyValuePair<int, Bitmap> f in frames) // ascending sizes
+            {
+                best = f.Value;
+                if (f.Key >= 2 * size) break;
+            }
+            return best;
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
             g.Clear(Parent != null ? Parent.BackColor : Theme.Surface);
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            float u = Math.Min(Width, Height) / 32f;
-            using (GraphicsPath bg = Theme.RoundedRect(new RectangleF(0, 0, 32 * u, 32 * u), 8 * u))
-            using (SolidBrush accent = new SolidBrush(Theme.Accent))
+            int size = Math.Min(Width, Height);
+            Bitmap src = size > 0 ? Source(size) : null;
+            if (src == null) return;
+            Bitmap mark = src;
+            if (src.Width != size)
             {
-                g.FillPath(accent, bg);
+                if (scaled == null || scaled.Width != size) { DropScaled(); scaled = IconFrames.Scale(src, size); }
+                mark = scaled;
             }
-            using (Pen keys = new Pen(Color.White, 2.4f * u))
+            g.CompositingMode = CompositingMode.SourceOver;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor; // a 1:1 copy
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.DrawImage(mark, new Rectangle(0, 0, size, size), 0, 0, size, size, GraphicsUnit.Pixel);
+        }
+
+        private void DropScaled()
+        {
+            if (scaled != null) { scaled.Dispose(); scaled = null; }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
             {
-                keys.StartCap = LineCap.Round;
-                keys.EndCap = LineCap.Round;
-                foreach (float x in new float[] { 9, 14, 19, 24 })
-                    g.DrawLine(keys, x * u, 9 * u, x * u, 23 * u);
+                DropScaled();
+                foreach (Bitmap b in frames.Values) b.Dispose();
+                frames.Clear();
             }
-            using (SolidBrush white = new SolidBrush(Color.White))
+            base.Dispose(disposing);
+        }
+    }
+
+    /// <summary>Reads the square frames of an .ico (32-bit BMP and PNG entries, as installer/make_icon.py writes
+    /// them) into 32-bit ARGB bitmaps, keyed by size.</summary>
+    internal static class IconFrames
+    {
+        public static SortedDictionary<int, Bitmap> FromFile(string path)
+        {
+            try
             {
-                foreach (float x in new float[] { 11, 20 })
+                if (!string.IsNullOrEmpty(path) && File.Exists(path)) return Read(File.ReadAllBytes(path));
+            }
+            catch (Exception) { } // unreadable or not an icon: the caller falls back to the embedded copy
+            return new SortedDictionary<int, Bitmap>();
+        }
+
+        public static SortedDictionary<int, Bitmap> FromResource(string name)
+        {
+            try
+            {
+                using (Stream s = typeof(IconFrames).Assembly.GetManifestResourceStream(name))
                 {
-                    using (GraphicsPath blk = Theme.RoundedRect(new RectangleF(x * u, 9 * u, 4 * u, 8 * u), 1.2f * u))
-                        g.FillPath(white, blk);
+                    if (s != null)
+                    {
+                        MemoryStream ms = new MemoryStream();
+                        s.CopyTo(ms);
+                        return Read(ms.ToArray());
+                    }
                 }
             }
+            catch (Exception) { }
+            return new SortedDictionary<int, Bitmap>();
+        }
+
+        public static SortedDictionary<int, Bitmap> Read(byte[] ico)
+        {
+            SortedDictionary<int, Bitmap> result = new SortedDictionary<int, Bitmap>();
+            if (ico.Length < 6 || BitConverter.ToUInt16(ico, 0) != 0 || BitConverter.ToUInt16(ico, 2) != 1) return result;
+            int count = BitConverter.ToUInt16(ico, 4);
+            for (int i = 0; i < count && 6 + 16 * (i + 1) <= ico.Length; i++)
+            {
+                int entry = 6 + 16 * i;
+                int width = ico[entry] == 0 ? 256 : ico[entry];
+                int height = ico[entry + 1] == 0 ? 256 : ico[entry + 1];
+                int length = BitConverter.ToInt32(ico, entry + 8);
+                int offset = BitConverter.ToInt32(ico, entry + 12);
+                if (width != height || result.ContainsKey(width) || length <= 0 || offset < 0 || offset > ico.Length - length)
+                    continue;
+                Bitmap frame = null;
+                try { frame = IsPng(ico, offset) ? Png(ico, offset, length) : Dib(ico, offset, length); }
+                catch (Exception) { }
+                if (frame != null && frame.Width == width && frame.Height == width) result[width] = frame;
+                else if (frame != null) frame.Dispose();
+            }
+            return result;
+        }
+
+        private static bool IsPng(byte[] b, int at)
+        {
+            return b.Length - at >= 8 && b[at] == 0x89 && b[at + 1] == 0x50 && b[at + 2] == 0x4E && b[at + 3] == 0x47;
+        }
+
+        private static Bitmap Png(byte[] b, int offset, int length)
+        {
+            using (MemoryStream ms = new MemoryStream(b, offset, length))
+            using (Bitmap png = new Bitmap(ms))
+            {
+                Bitmap frame = new Bitmap(png.Width, png.Height, PixelFormat.Format32bppArgb);
+                CopyPixels(png, frame);
+                return frame;
+            }
+        }
+
+        /// <summary>A 32-bit BGRA DIB (BITMAPINFOHEADER, bottom-up rows, then the AND mask, which is not needed).</summary>
+        private static Bitmap Dib(byte[] b, int offset, int length)
+        {
+            int header = BitConverter.ToInt32(b, offset);
+            int width = BitConverter.ToInt32(b, offset + 4);
+            int height = BitConverter.ToInt32(b, offset + 8) / 2; // XOR image + AND mask
+            int bits = BitConverter.ToUInt16(b, offset + 14);
+            int stride = width * 4;
+            if (header < 40 || bits != 32 || width <= 0 || height != width || header + stride * height > length) return null;
+            Bitmap frame = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            BitmapData data = frame.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                for (int y = 0; y < height; y++)
+                    Marshal.Copy(b, offset + header + (height - 1 - y) * stride, new IntPtr(data.Scan0.ToInt64() + (long)y * data.Stride), stride);
+            }
+            finally { frame.UnlockBits(data); }
+            return frame;
+        }
+
+        private static void CopyPixels(Bitmap from, Bitmap to)
+        {
+            Rectangle r = new Rectangle(0, 0, from.Width, from.Height);
+            BitmapData src = from.LockBits(r, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                BitmapData dst = to.LockBits(r, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                try
+                {
+                    byte[] row = new byte[r.Width * 4];
+                    for (int y = 0; y < r.Height; y++)
+                    {
+                        Marshal.Copy(new IntPtr(src.Scan0.ToInt64() + (long)y * src.Stride), row, 0, row.Length);
+                        Marshal.Copy(row, 0, new IntPtr(dst.Scan0.ToInt64() + (long)y * dst.Stride), row.Length);
+                    }
+                }
+                finally { to.UnlockBits(dst); }
+            }
+            finally { from.UnlockBits(src); }
+        }
+
+        /// <summary>The frame scaled to size x size with high-quality bicubic filtering, in premultiplied alpha so
+        /// that the transparent surround does not darken the anti-aliased edges.</summary>
+        public static Bitmap Scale(Bitmap frame, int size)
+        {
+            Bitmap result = new Bitmap(size, size, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(result))
+            using (ImageAttributes edges = new ImageAttributes())
+            {
+                edges.SetWrapMode(WrapMode.TileFlipXY); // no faint border from sampling outside the frame
+                g.CompositingMode = CompositingMode.SourceCopy;
+                g.CompositingQuality = CompositingQuality.HighQuality;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.DrawImage(frame, new Rectangle(0, 0, size, size), 0, 0, frame.Width, frame.Height, GraphicsUnit.Pixel, edges);
+            }
+            return result;
         }
     }
 
