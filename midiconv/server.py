@@ -1,27 +1,31 @@
-"""Local web server: REST API + Server-Sent Events + the static front end in web/."""
+"""In-process HTTP backend for the desktop window: REST API + Server-Sent Events + the UI files.
+
+It listens on 127.0.0.1 only, on a random port, and every request must carry the per-launch
+session token that the desktop window receives (see desktop.py). It is not meant to be opened
+in a browser.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
 import mimetypes
+import secrets
 import shutil
-import threading
-import webbrowser
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import APP_NAME, __version__, engines, pipeline
 from .jobs import TERMINAL, JobManager
+from .paths import WEB_DIR, data_dir
 from .postprocess import OUTPUT_OPTIONS
 
-ROOT = Path(__file__).resolve().parent.parent
-WEB = ROOT / "web"
-DATA = ROOT / "data"
 MAX_UPLOAD_BYTES = 2 * 1024 ** 3
+SESSION_COOKIE = "mc_session"
+_token: str | None = None
 
 # The Windows registry can map .js to text/plain, which breaks ES modules.
 for ext, mt in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".css", "text/css"),
@@ -42,8 +46,35 @@ _device_info: dict | None = None
 def manager() -> JobManager:
     global _manager
     if _manager is None:
-        _manager = JobManager(DATA / "jobs")
+        _manager = JobManager(data_dir() / "jobs")
     return _manager
+
+
+def manager_if_started() -> JobManager | None:
+    return _manager
+
+
+def configure(token: str) -> None:
+    """Require this per-launch token (set by the desktop window) on every request."""
+    global _token
+    _token = token
+
+
+@app.middleware("http")
+async def _guard(request: Request, call_next):
+    if _token is None:
+        return PlainTextResponse("Not configured.", status_code=503)
+    host = request.headers.get("host", "")
+    if not (host.startswith("127.0.0.1:") or host.startswith("localhost:")):
+        return PlainTextResponse("Forbidden.", status_code=403)  # DNS-rebinding guard
+    given = request.query_params.get("token")
+    if given is not None and secrets.compare_digest(given, _token):
+        resp = RedirectResponse(request.url.path or "/", status_code=303)
+        resp.set_cookie(SESSION_COOKIE, _token, httponly=True, samesite="strict")
+        return resp
+    if not secrets.compare_digest(request.cookies.get(SESSION_COOKIE, ""), _token):
+        return PlainTextResponse("MIDI Converter is a desktop app: open it from the Start menu.", status_code=403)
+    return await call_next(request)
 
 
 def device_info() -> dict:
@@ -236,14 +267,13 @@ async def _unhandled(request: Request, exc: Exception):  # pragma: no cover
     return JSONResponse({"detail": "Unexpected server error."}, status_code=500)
 
 
-app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="ui")
 
 
-def run(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -> None:
+def make_server(port: int):
+    """A uvicorn server for 127.0.0.1:<port>, to be run on a background thread."""
     import uvicorn
 
-    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}/"
-    print(f"{APP_NAME} {__version__} running at {url}  (Ctrl+C to stop)")
-    if open_browser:
-        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
-    uvicorn.run(app, host=host, port=port, log_level="warning", timeout_graceful_shutdown=2)
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", log_config=None,
+                            timeout_graceful_shutdown=1, access_log=False)
+    return uvicorn.Server(config)

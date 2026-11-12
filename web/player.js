@@ -42,7 +42,11 @@ export class Player {
   async _loadPiano() {
     try {
       this.onStatus('Loading piano sounds…');
+      // Bundled samples (scripts/fetch_piano_samples.py); fall back to smplr's online host.
+      const local = new URL('vendor/piano/', location.href).href;
+      const hasLocal = await fetch(local + encodeURIComponent('PP C4') + '.ogg', { method: 'HEAD' }).then((r) => r.ok, () => false);
       const piano = SplendidGrandPiano(this.ctx, {
+        ...(hasLocal ? { baseUrl: local.replace(/\/$/, ''), formats: ['ogg'] } : {}),
         destination: this.midiGain,
         decayTime: 0.3,
         volume: 105,

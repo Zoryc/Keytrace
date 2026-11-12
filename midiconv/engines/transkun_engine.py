@@ -162,7 +162,8 @@ class TranskunEngine(Engine):
         notes, pedals = [], []
         for e in events:
             if e.pitch > 0:
-                notes.append(Note(float(e.start), float(e.end), int(e.pitch), int(max(1, min(127, e.velocity)))))
+                notes.append(Note(float(e.start), float(e.end), int(e.pitch), int(max(1, min(127, e.velocity))),
+                                  round(float(getattr(e, "conf", 1.0)), 4)))
             elif -e.pitch in (SUSTAIN, SOFT):
                 pedals.append(Pedal(float(e.start), float(e.end), int(-e.pitch), 127))
         notes.sort(key=lambda n: (n.start, n.pitch))
@@ -257,6 +258,7 @@ class TranskunEngine(Engine):
         import torch
         import torch.nn.functional as F
         from transkun import CRF
+        from transkun.CRF.NeuralSemiCRFInterval import forward_backward
         from transkun.Data import Note as TNote
 
         K = frames.shape[0]
@@ -267,12 +269,21 @@ class TranskunEngine(Engine):
         feats = feats.view(K, *feats.shape[-3:])
         ctx = model.backbone(feats, outputIndices=torch.tensor(model.targetMIDIPitch, device=feats.device))
         S, S_skip = model.scorer(ctx)  # [T, T, K, nSym], [T-1, K, nSym]
-        crf = CRF.NeuralSemiCRFInterval(S.mean(dim=2), S_skip.mean(dim=1))
+        S, S_skip = S.mean(dim=2), S_skip.mean(dim=1)
+        crf = CRF.NeuralSemiCRFInterval(S, S_skip)
         path = crf.decode(forcedStartPos=start_pos, forward=False)  # nSym lists of (begin, end) frames
         n_sym = len(model.targetMIDIPitch)
         assert len(path) == n_sym
         if sum(len(p) for p in path) == 0:
             return [], [0] * n_sym
+
+        # Confidence: exact posterior (semi-CRF forward-backward) that the track has an event
+        # starting within +-1 frame (+-23 ms) of the decoded onset, whatever its end.
+        _, marg, _ = forward_backward(S, S_skip)  # marg[end, begin, track]
+        onset_p = marg.sum(dim=0)  # [begin, track]
+        onset_p = onset_p + F.pad(onset_p[1:], (0, 0, 0, 1)) + F.pad(onset_p[:-1], (0, 0, 1, 0))
+        onset_p = onset_p.clamp(max=1.0).cpu()
+        del marg
 
         p_vel = of_val = of_pres = 0.0
         for k in range(K):
@@ -308,8 +319,10 @@ class TranskunEngine(Engine):
                 start = max(start, last_end)
                 end = max(end, start + 1e-8)
                 last_end = end
-                out.append(TNote(start=start, end=end, pitch=sym, velocity=velocity[n],
-                                 hasOnset=has_on, hasOffset=has_off))
+                tn = TNote(start=start, end=end, pitch=sym, velocity=velocity[n],
+                           hasOnset=has_on, hasOffset=has_off)
+                tn.conf = float(onset_p[b, j])
+                out.append(tn)
                 if has_off:
                     cur_last_p = e
                 n += 1

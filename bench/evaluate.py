@@ -145,7 +145,7 @@ def save_notes(cfg, set_name, piece_id, notes, pedals):
     d = RESULTS / "notes"
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{cfg}__{set_name}__{piece_id}.json").write_text(json.dumps({
-        "notes": [[n.start, n.end, n.pitch, n.velocity] for n in notes],
+        "notes": [[n.start, n.end, n.pitch, n.velocity, n.confidence] for n in notes],
         "pedals": [[p.start, p.end, p.cc] for p in pedals]}))
 
 
@@ -154,7 +154,7 @@ def load_notes(cfg, set_name, piece_id):
     if not f.exists():
         return None
     d = json.loads(f.read_text())
-    return ([Note(s, e, p, v) for s, e, p, v in d["notes"]], [Pedal(s, e, c) for s, e, c in d["pedals"]])
+    return ([Note(*n) for n in d["notes"]], [Pedal(s, e, c) for s, e, c in d["pedals"]])
 
 
 def audio_for_set(set_name, piece_id):

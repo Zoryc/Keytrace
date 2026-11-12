@@ -1,0 +1,16 @@
+# Pinned runtime for the installed app (installed by scripts/setup_runtime.py with uv).
+# PyTorch comes from the CUDA 12.8 index and Transkun is installed without dependencies:
+# both are handled separately by the setup script.
+numpy==2.5.4
+scipy==1.18.1
+av==19.0.2
+soxr==1.1.0
+soundfile==0.14.0
+pretty_midi==0.2.11.post0
+mido==1.3.3
+mir_eval==0.8.2
+fastapi==0.162.5
+uvicorn==0.54.0
+python-multipart==0.0.33
+pywebview==6.2.1
+pythonnet==3.2.1

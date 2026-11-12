@@ -1,8 +1,7 @@
-"""Command line.
+"""Entry point.
 
-  python -m midiconv                       start the web app (http://127.0.0.1:8765)
-  python -m midiconv serve --port 8765     same, explicit
-  python -m midiconv convert song.mp3 [-o song.mid] [--engine transkun] [--set views=full ...]
+  python -m midiconv                     open the MIDI Converter app window
+  python -m midiconv convert song.mp3 [-o song.mid] [--engine transkun] [--set views=full] [--out pedal=extend]
 """
 from __future__ import annotations
 
@@ -21,46 +20,42 @@ def _kv(items):
     return out
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog="midiconv", description="MIDI Converter")
-    sub = ap.add_subparsers(dest="cmd")
-    s = sub.add_parser("serve", help="start the web app")
-    s.add_argument("--host", default="127.0.0.1")
-    s.add_argument("--port", type=int, default=8765)
-    s.add_argument("--no-browser", action="store_true")
-    c = sub.add_parser("convert", help="convert one file")
-    c.add_argument("input")
-    c.add_argument("-o", "--output")
-    c.add_argument("--instrument", default="piano")
-    c.add_argument("--engine")
-    c.add_argument("--set", action="append", metavar="KEY=VALUE", help="engine option")
-    c.add_argument("--out", action="append", metavar="KEY=VALUE", help="output option")
+def convert_cli(argv) -> int:
+    ap = argparse.ArgumentParser(prog="midiconv convert", description="Convert one file without the app window")
+    ap.add_argument("input")
+    ap.add_argument("-o", "--output")
+    ap.add_argument("--instrument", default="piano")
+    ap.add_argument("--engine")
+    ap.add_argument("--set", action="append", metavar="KEY=VALUE", help="engine option")
+    ap.add_argument("--out", action="append", metavar="KEY=VALUE", help="output option")
     args = ap.parse_args(argv)
 
-    if args.cmd == "convert":
-        from . import pipeline
-        from .engines.base import Progress
+    from . import pipeline
+    from .engines.base import Progress
 
-        src = Path(args.input)
-        dst = Path(args.output) if args.output else src.with_suffix(".mid")
+    src = Path(args.input)
+    dst = Path(args.output) if args.output else src.with_suffix(".mid")
 
-        def show(frac, msg):
-            print(f"\r{frac * 100:5.1f}%  {msg or '':<60}", end="", file=sys.stderr, flush=True)
+    def show(frac, msg):
+        print(f"\r{frac * 100:5.1f}%  {msg or '':<60}", end="", file=sys.stderr, flush=True)
 
-        with tempfile.TemporaryDirectory() as tmp:
-            stats = pipeline.run(src, tmp, instrument=args.instrument, engine=args.engine,
-                                 engine_options=_kv(args.set), output_options=_kv(args.out),
-                                 progress=Progress(show), preview=False)
-            shutil.copyfile(Path(tmp) / pipeline.MIDI_FILE, dst)
-        print(f"\n{stats['notes']} notes, {stats['pedals']} pedal events, "
-              f"{stats['seconds_total']} s -> {dst}", file=sys.stderr)
-        return 0
-
-    from .server import run
-
-    run(host=getattr(args, "host", "127.0.0.1"), port=getattr(args, "port", 8765),
-        open_browser=not getattr(args, "no_browser", False))
+    with tempfile.TemporaryDirectory() as tmp:
+        stats = pipeline.run(src, tmp, instrument=args.instrument, engine=args.engine,
+                             engine_options=_kv(args.set), output_options=_kv(args.out),
+                             progress=Progress(show), preview=False)
+        shutil.copyfile(Path(tmp) / pipeline.MIDI_FILE, dst)
+    print(f"\n{stats['notes']} notes, {stats['pedals']} pedal events, "
+          f"{stats['seconds_total']} s -> {dst}", file=sys.stderr)
     return 0
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "convert":
+        return convert_cli(argv[1:])
+    from .desktop import main as desktop_main
+
+    return desktop_main(argv)
 
 
 if __name__ == "__main__":

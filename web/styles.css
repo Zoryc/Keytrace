@@ -76,7 +76,10 @@ body {
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  user-select: none;
+  cursor: default;
 }
+input, select, textarea, .error-box p { user-select: text; }
 [hidden] { display: none !important; }
 svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 button { font: inherit; color: inherit; }
@@ -282,7 +285,11 @@ button { font: inherit; color: inherit; }
   background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: var(--shadow-lg);
   transition: opacity .2s, transform .2s;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast.has-action { display: flex; align-items: center; gap: 14px; padding-right: 8px; }
+.toast-action { border: 0; background: rgba(255, 255, 255, .14); color: inherit; font: inherit; font-weight: 600; font-size: 13px; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+.toast-action:hover { background: rgba(255, 255, 255, .24); }
+@media (prefers-color-scheme: dark) { .toast-action { background: rgba(0, 0, 0, .1); } .toast-action:hover { background: rgba(0, 0, 0, .18); } }
 
 @media (max-width: 640px) {
   .topbar, .page { padding-left: 14px; padding-right: 14px; }

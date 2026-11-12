@@ -52,12 +52,33 @@ function show(view) {
   if (view === 'viewResult') requestAnimationFrame(() => roll._resize());
 }
 
-function toast(msg) {
+function toast(msg, action = null) {
   const t = $('toast');
   t.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'toast-action';
+    b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.run(); };
+    t.append(b);
+  }
+  t.classList.toggle('has-action', !!action);
   t.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2600);
+  toast.timer = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2600);
+}
+
+async function saveMidi(e) {
+  const api = window.pywebview?.api;
+  if (!api || !state.job) return; // plain download link fallback
+  e.preventDefault();
+  try {
+    const r = await api.save_midi(state.job.id, state.job.midi_name);
+    if (r?.saved) toast(`Saved ${r.name}`, { label: 'Show in folder', run: () => api.show_in_folder(r.path) });
+    else if (r?.error) toast(r.error);
+  } catch {
+    toast('Could not save the MIDI file.');
+  }
 }
 
 function fmtDuration(sec) {
@@ -605,6 +626,7 @@ function bind() {
   };
   $('retryBtn').onclick = goHome;
   $('newBtn').onclick = goHome;
+  $('downloadBtn').onclick = saveMidi;
   $('home').onclick = (e) => { e.preventDefault(); goHome(); };
 
   $('playBtn').onclick = togglePlay;
@@ -633,7 +655,7 @@ async function init() {
   try {
     state.info = await (await fetch('/api/info')).json();
   } catch {
-    document.body.innerHTML = '<p style="padding:40px;font:16px system-ui">The converter is not running. Start it with <code>run.bat</code>.</p>';
+    document.body.innerHTML = '<p style="padding:40px;font:16px system-ui">The converter engine is not responding. Close MIDI Converter and open it again.</p>';
     return;
   }
   if (state.settings.instrument && state.info.instruments.some((i) => i.id === state.settings.instrument)) state.instrument = state.settings.instrument;

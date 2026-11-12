@@ -25,3 +25,10 @@ desktop.ini
 
 # Logs
 *.log
+
+# Piano samples (fetched by scripts/fetch_piano_samples.py)
+web/vendor/piano/
+
+# Installer build output
+installer/build/
+installer/dist/

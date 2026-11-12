@@ -235,11 +235,21 @@ export class PianoRoll {
         ctx.fillStyle = c.tail;
         ctx.fillRect(x1, y + h * 0.2, xs - x1, h * 0.6);
       }
-      ctx.globalAlpha = 0.28 + 0.72 * Math.min(1, v / 110);
-      ctx.fillStyle = c.note;
+      const conf = n[5] ?? 1;
       ctx.beginPath();
       ctx.roundRect(x0, y, Math.max(2, x1 - x0), h, radius);
-      ctx.fill();
+      if (conf < 0.6) {  // uncertain: outline only
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = c.note;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.globalAlpha = 0.28 + 0.72 * Math.min(1, v / 110);
+        ctx.fillStyle = c.note;
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
       if (this.hover === n) {
         ctx.strokeStyle = c.ink;
@@ -312,7 +322,9 @@ export class PianoRoll {
       if (n !== this.hover) { this.hover = n; this.requestDraw(); }
       if (n) {
         const dur = n[1] - n[0];
-        this.tip.textContent = `${noteName(n[2])}  ·  velocity ${n[3]}  ·  ${dur < 1 ? Math.round(dur * 1000) + ' ms' : dur.toFixed(2) + ' s'}`;
+        const conf = n[5] ?? 1;
+        this.tip.textContent = `${noteName(n[2])}  ·  velocity ${n[3]}  ·  ${dur < 1 ? Math.round(dur * 1000) + ' ms' : dur.toFixed(2) + ' s'}` +
+          (conf < 0.995 ? `  ·  ${Math.round(conf * 100)}% sure` : '');
         this.tip.style.left = (x + this.keyW) + 'px';
         this.tip.style.top = y + 'px';
         this.tip.hidden = false;
