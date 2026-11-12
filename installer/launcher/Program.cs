@@ -9,6 +9,9 @@
 //                                                   --unattended: also close by itself on failure
 //                                                   (silent installs: nobody is there to click Close)
 //
+//   --elevated-repair (private, with --setup) marks the elevated copy that a repair of an all-users install
+//   starts: its non-elevated parent holds the setup mutex for it while it waits, so it skips that check.
+//
 // C# 5 / .NET Framework 4.x, built by installer/build.ps1 with csc.exe.
 using System;
 using System.Collections.Generic;
@@ -31,6 +34,7 @@ namespace MidiConverterLauncher
         public const string AppUserModelId = "MIDIConverter.Desktop";
         public const string SetupMutexName = "Local\\MIDIConverter.Setup";
         public const string SetupWindowTitle = "MIDI Converter Setup";
+        private const string ElevatedRepairFlag = "--elevated-repair";
 
         public const int ExitSuccess = 0;
         public const int ExitError = 1;
@@ -45,6 +49,7 @@ namespace MidiConverterLauncher
             bool withAria = false;
             bool quiet = false;
             bool unattended = false;
+            bool elevatedRepair = false;
             List<string> passThrough = new List<string>();
             foreach (string a in args)
             {
@@ -59,6 +64,7 @@ namespace MidiConverterLauncher
                     if (IsFlag(a, "--with-aria")) withAria = true;
                     else if (IsFlag(a, "--quiet")) quiet = true;
                     else if (IsFlag(a, "--unattended")) unattended = quiet = true;
+                    else if (IsFlag(a, ElevatedRepairFlag)) elevatedRepair = true;
                     else unknown.Add(a);
                 }
                 if (unknown.Count > 0)
@@ -68,7 +74,7 @@ namespace MidiConverterLauncher
                         SetupWindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return ExitError;
                 }
-                return RunSetup(paths, withAria, quiet, unattended, SetupMode.Explicit, null);
+                return RunSetup(paths, withAria, quiet, unattended, SetupMode.Explicit, null, elevatedRepair);
             }
 
             List<string> appArgs = ResolvePaths(passThrough);
@@ -76,7 +82,7 @@ namespace MidiConverterLauncher
                 return LaunchApp(paths, appArgs, null) ? ExitSuccess : ExitError;
 
             // The runtime is missing or incomplete: finish (repair) the setup, then start the app.
-            return RunSetup(paths, paths.ReadSavedWithAria(), false, false, SetupMode.Repair, appArgs);
+            return RunSetup(paths, paths.ReadSavedWithAria(), false, false, SetupMode.Repair, appArgs, false);
         }
 
         private static bool IsFlag(string arg, string flag)
@@ -91,50 +97,86 @@ namespace MidiConverterLauncher
             Application.SetCompatibleTextRenderingDefault(false);
         }
 
-        private static int RunSetup(AppPaths paths, bool withAria, bool quiet, bool unattended, SetupMode mode, List<string> appArgs)
+        /// <param name="elevatedRepair">This is the elevated copy started by <see cref="RunElevatedRepair"/>: its parent
+        /// holds the setup mutex on its behalf, so a mutex that is already owned does not mean "another setup is running".</param>
+        private static int RunSetup(AppPaths paths, bool withAria, bool quiet, bool unattended, SetupMode mode, List<string> appArgs,
+                                    bool elevatedRepair)
         {
             InitUi();
-            bool createdNew;
-            using (Mutex mutex = new Mutex(true, SetupMutexName, out createdNew))
+            // One setup at a time. Ownership counts, not whether the mutex already exists: the parent of an elevated
+            // repair keeps its handle open while the elevated copy runs.
+            Mutex mutex = OpenSetupMutex();
+            bool owned = mutex != null && TryAcquire(mutex);
+            try
             {
-                if (!createdNew)
+                if (!owned && !elevatedRepair)
                 {
                     // Another setup window is already running: bring it to the front.
                     Native.ActivateWindowByTitle(SetupWindowTitle);
                     return mode == SetupMode.Repair ? ExitSuccess : ExitError;
                 }
-                try
+                if (mode == SetupMode.Repair && !paths.CanWriteInstallDir())
                 {
-                    if (mode == SetupMode.Repair && !paths.CanWriteInstallDir())
+                    // Keep holding the mutex while the elevated copy runs: a second start of the app then only
+                    // brings the setup window to the front instead of asking for elevation again.
+                    return RunElevatedRepair(paths, withAria, appArgs);
+                }
+                Native.SetAppUserModelId(AppUserModelId);
+                Application.ThreadException += delegate(object s, ThreadExceptionEventArgs e)
+                {
+                    MessageBox.Show("Unexpected error:\n\n" + e.Exception, SetupWindowTitle,
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                };
+                using (SetupForm form = new SetupForm(paths, withAria, quiet, unattended, mode, appArgs))
+                {
+                    Application.Run(form);
+                    switch (form.Outcome)
                     {
-                        mutex.ReleaseMutex();
-                        return RunElevatedRepair(paths, withAria, appArgs);
-                    }
-                    Native.SetAppUserModelId(AppUserModelId);
-                    Application.ThreadException += delegate(object s, ThreadExceptionEventArgs e)
-                    {
-                        MessageBox.Show("Unexpected error:\n\n" + e.Exception, SetupWindowTitle,
-                            MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    };
-                    using (SetupForm form = new SetupForm(paths, withAria, quiet, unattended, mode, appArgs))
-                    {
-                        Application.Run(form);
-                        switch (form.Outcome)
-                        {
-                            case SetupOutcome.Success: return ExitSuccess;
-                            case SetupOutcome.Cancelled: return ExitCancelled;
-                            default: return ExitError;
-                        }
+                        case SetupOutcome.Success: return ExitSuccess;
+                        case SetupOutcome.Cancelled: return ExitCancelled;
+                        default: return ExitError;
                     }
                 }
-                finally
+            }
+            finally
+            {
+                if (owned)
                 {
                     try { mutex.ReleaseMutex(); } catch (ApplicationException) { }
                 }
+                if (mutex != null) mutex.Dispose();
             }
         }
 
-        /// <summary>The app is installed for all users (Program Files): run the setup elevated, then start the app as the user.</summary>
+        /// <summary>The setup mutex, or null when it cannot be opened: then an elevated setup created it (all-users
+        /// install) and is running, since a non-elevated process may not open an elevated process's mutex.</summary>
+        private static Mutex OpenSetupMutex()
+        {
+            try
+            {
+                return new Mutex(false, SetupMutexName);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool TryAcquire(Mutex mutex)
+        {
+            try
+            {
+                return mutex.WaitOne(0);
+            }
+            catch (AbandonedMutexException)
+            {
+                return true; // a setup that was killed left it behind: it is ours now
+            }
+        }
+
+        /// <summary>The app is installed for all users (Program Files): run the setup elevated, then start the app as the user.
+        /// The caller holds the setup mutex until this returns; the elevated copy gets --elevated-repair so that it does not
+        /// mistake that for another setup.</summary>
         private static int RunElevatedRepair(AppPaths paths, bool withAria, List<string> appArgs)
         {
             DialogResult answer = MessageBox.Show(
@@ -142,16 +184,18 @@ namespace MidiConverterLauncher
                 "It is installed for all users, so Windows will ask for administrator permission.",
                 SetupWindowTitle, MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
             if (answer != DialogResult.OK) return ExitCancelled;
-            ProcessStartInfo psi = new ProcessStartInfo(paths.LauncherExe, "--setup --quiet" + (withAria ? " --with-aria" : ""));
+            ProcessStartInfo psi = new ProcessStartInfo(paths.LauncherExe,
+                "--setup --quiet" + (withAria ? " --with-aria" : "") + " " + ElevatedRepairFlag);
             psi.UseShellExecute = true;
             psi.Verb = "runas";
             psi.WorkingDirectory = paths.Root;
+            int code;
             try
             {
                 using (Process p = Process.Start(psi))
                 {
                     p.WaitForExit();
-                    if (p.ExitCode != ExitSuccess) return p.ExitCode;
+                    code = p.ExitCode;
                 }
             }
             catch (Win32Exception e)
@@ -159,6 +203,17 @@ namespace MidiConverterLauncher
                 if (e.NativeErrorCode == 1223) return ExitCancelled; // the user declined the UAC prompt
                 MessageBox.Show("The setup could not be started:\n\n" + e.Message, SetupWindowTitle,
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return ExitError;
+            }
+            if (code == ExitCancelled) return ExitCancelled;
+            if (code != ExitSuccess)
+            {
+                MessageBox.Show(
+                    "MIDI Converter could not finish installing its components" +
+                    (code == ExitError ? "." : " (exit code " + code + ").") + "\n\n" +
+                    "The details are in the setup log:\n" + paths.SetupLog + "\n\n" +
+                    "Open MIDI Converter again to retry.",
+                    SetupWindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return ExitError;
             }
             return LaunchApp(paths, appArgs, null) ? ExitSuccess : ExitError;

@@ -41,13 +41,21 @@ REVISIONS = {  # pinned Hugging Face revisions (verified 2026-11-12)
 
 def load_model(size: str):
     import torch
-    from huggingface_hub import hf_hub_download
     from muscriptor import TranscriptionModel
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # A manual download (model.safetensors + config.json side by side) in models/muscriptor-<size>/ wins.
+    local = HERE.parent / "models" / f"muscriptor-{size}" / "model.safetensors"
+    if local.is_file():
+        if not (local.parent / "config.json").is_file():
+            raise SystemExit(f"{local.parent} needs config.json next to model.safetensors")
+        return TranscriptionModel.load_model(str(local), device=device)
+    from huggingface_hub import hf_hub_download
 
     repo = f"MuScriptor/muscriptor-{size}"
     weights = hf_hub_download(repo, "model.safetensors", revision=REVISIONS[size])
     hf_hub_download(repo, "config.json", revision=REVISIONS[size])
-    return TranscriptionModel.load_model(weights, device="cuda" if torch.cuda.is_available() else "cpu")
+    return TranscriptionModel.load_model(weights, device=device)
 
 
 def transcribe(model, audio, prelude: bool, piano_only: bool):
