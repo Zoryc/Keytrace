@@ -25,9 +25,12 @@ torchaudio 2.9). Here it runs in-process instead:
   * librosa is only needed for one silence helper; if it is not installed an equivalent numpy
     version is injected while `amt` is imported;
   * no torch.compile (no Triton on Windows) and no int8; bf16 autocast as upstream. Instead, each
-    window is decoded by a sync-free re-implementation of `process_segments` whose per-token step
-    is replayed as a CUDA graph (token-identical to upstream's process_segments on MAESTRO
-    excerpts, about 7x faster here); `_transcribe_tokens(..., fast=False)` runs upstream's own;
+    window is decoded by a sync-free re-implementation of `process_segments` whose whole per-token
+    step (decoder + token choice + sequence update) is replayed as a CUDA graph (token-identical
+    to upstream's process_segments on MAESTRO excerpts, about 8x faster here);
+    `_transcribe_tokens(..., fast=False)` runs upstream's own;
+  * the decoder's Linear weights are stored in bf16 once at load: autocast casts them to bf16 on
+    every call anyway (same rounding), so the results are identical and each token is ~20% faster;
   * the prompt builder's `random.shuffle` uses a private seeded RNG, so results are reproducible;
   * windows of digital silence (peak below -80 dBFS) are not decoded (the model babbles on them).
 Token sequences are turned into notes by a tolerant version of aria's detokenizer (a malformed
@@ -63,8 +66,10 @@ WEIGHTS_NAME = "piano-medium-double-1.0.safetensors"
 WEIGHTS_SIZE = 446_577_344
 WEIGHTS_PATH = Path(__file__).resolve().parents[2] / "models" / "aria-amt" / WEIGHTS_NAME
 MAX_NOTE_MS = 5000  # aria's detokenizer caps every note at 5 s
-CANCEL_CHECK_TOKENS = 64
-USE_CUDA_GRAPH = True  # replay the per-token decoder step as a CUDA graph (eager fallback)
+CANCEL_CHECK_TOKENS = 64  # upstream decode path (fast=False): cancel check interval
+STOP_CHECK_TOKENS = 8  # fast path: look for the end of the window (one GPU sync) every N tokens
+USE_CUDA_GRAPH = True  # replay the per-token step as a CUDA graph (eager fallback)
+VOCAB_COLS = 3419  # amt get_static_mask(): token ids 392..3418 are onsets/velocities
 RNG_SEED = 0
 SILENCE_PEAK = 1e-4  # windows whose peak is below -80 dBFS are not decoded
 
@@ -212,57 +217,98 @@ class AriaEngine(Engine):
         state = load_file(str(WEIGHTS_PATH), device="cpu")
         state = {k.removeprefix("_orig_mod."): v for k, v in state.items()}  # compiled-model keys
         model.load_state_dict(state)
-        model.decoder.setup_cache(batch_size=1, max_seq_len=T.MAX_BLOCK_LEN,
-                                  dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float)
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float
+        model.decoder.setup_cache(batch_size=1, max_seq_len=T.MAX_BLOCK_LEN, dtype=dtype)
         model = model.cuda().eval()  # after setup_cache, as upstream (moves the causal mask too)
+        if dtype == torch.bfloat16:
+            # Every decoder matmul runs under bf16 autocast, which casts the fp32 weights to bf16 on
+            # each call (~60M values per token). Casting them once gives the same bf16 values.
+            for mod in model.decoder.modules():
+                if isinstance(mod, torch.nn.Linear):
+                    mod.weight.data = mod.weight.data.to(dtype)
+                    if mod.bias is not None:
+                        mod.bias.data = mod.bias.data.to(dtype)
         transform = _InferenceTransform().cuda().eval()
         graph = None
         if USE_CUDA_GRAPH:
+            stream = torch.cuda.current_stream()
             try:
-                graph = self._capture_decode_step(model)
+                graph = self._capture_step(model, T.MAX_BLOCK_LEN, dtype)
             except Exception as e:  # pragma: no cover - fall back to eager decoding
+                torch.cuda.set_stream(stream)  # a failed capture can leave the capture stream current
                 _log.warning("Aria-AMT: CUDA graph capture failed, decoding eagerly (%s)", e)
         self._T, self._tokenizer, self._transform, self._graph = T, tokenizer, transform, graph
         self._model = model  # last: a failed load leaves the engine unloaded
         return model
 
     @staticmethod
-    def _capture_decode_step(model):
-        """Records one single-token decoder step as a CUDA graph (~400 small kernels per token,
-        so launch overhead dominates in eager mode). The graph reads the token and its position
-        from static buffers and uses the model's KV caches in place; the cross-attention cache is
-        filled by the eager prefill of each window, exactly as upstream."""
+    def _capture_step(model, max_len: int, dtype):
+        """Records one whole decoding step as a CUDA graph: the single-token decoder pass (~400
+        small kernels, so launch overhead dominates in eager mode), the token choice (_pick) and the
+        sequence update. The step reads the position from a GPU counter and the previous token from
+        the GPU copy of the sequence, so a window decodes without the CPU in the loop. The KV caches
+        are used in place; the cross-attention cache is filled by the eager prefill of each window,
+        exactly as upstream."""
         import torch
         from torch.nn.attention import SDPBackend, sdpa_kernel
 
         dev = torch.device("cuda")
-        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float
-        tok_buf = torch.zeros((1, 1), dtype=torch.long, device=dev)
-        pos_buf = torch.zeros((1,), dtype=torch.long, device=dev)
+        st = types.SimpleNamespace(
+            seq=torch.zeros((1, max_len), dtype=torch.long, device=dev),
+            eos=torch.full((1,), max_len, dtype=torch.int, device=dev),
+            idx=torch.ones((), dtype=torch.int, device=dev),  # position of the token being chosen
+            nan=torch.zeros((), dtype=torch.bool, device=dev),
+            tok=torch.zeros((1, 1), dtype=torch.long, device=dev),
+            pos=torch.zeros((1,), dtype=torch.long, device=dev),
+        )
+        consts = st.consts = _pick_constants(dev, model.decoder.output.out_features)
         xa_none = torch.zeros(0, dtype=torch.int, device=dev)
         xa_dummy = torch.zeros((1, model.dims.n_audio_ctx, model.dims.n_audio_state), device=dev)
 
         def step():
-            return model.decoder.forward(x=tok_buf, xa=xa_dummy, x_input_pos=pos_buf, xa_input_pos=xa_none)[:, -1]
+            il = st.idx.long()
+            st.pos.copy_((il - 1).view(1))
+            st.tok.copy_(st.seq.gather(1, (il - 1).view(1, 1)))
+            logits = model.decoder.forward(x=st.tok, xa=xa_dummy, x_input_pos=st.pos,
+                                           xa_input_pos=xa_none)[:, -1].clone()
+            st.nan.logical_or_(torch.isnan(logits).any())
+            next_ids, eos = _pick(logits, st.idx, st.eos, consts)
+            insert = eos >= st.idx  # graph steps always come after the prompt
+            cur = st.seq.gather(1, il.view(1, 1)).view(-1)
+            st.seq.scatter_(1, il.view(1, 1), torch.where(insert, next_ids, cur).view(1, 1))
+            st.eos.copy_(eos)
+            st.idx.add_(1)
 
         ctx = lambda: (torch.autocast("cuda", dtype=dtype, cache_enabled=False), torch.inference_mode(),  # noqa: E731
                        sdpa_kernel(SDPBackend.MATH))
         side = torch.cuda.Stream()
         side.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(side), contextlib.ExitStack() as st:
+        with torch.cuda.stream(side), contextlib.ExitStack() as es:
             for c in ctx():
-                st.enter_context(c)
-            for _ in range(3):  # warm-up (writes junk at cache position 0; every prefill rewrites it)
+                es.enter_context(c)
+            for _ in range(3):  # warm-up (writes junk at cache positions 0-2; every prefill rewrites them)
                 step()
         torch.cuda.current_stream().wait_stream(side)
         graph = torch.cuda.CUDAGraph()
-        with contextlib.ExitStack() as st:
+        with contextlib.ExitStack() as es:
             for c in ctx():
-                st.enter_context(c)
+                es.enter_context(c)
             with torch.cuda.graph(graph, capture_error_mode="thread_local"):
-                out = step()
+                step()
         torch.cuda.synchronize()
-        return types.SimpleNamespace(graph=graph, tok=tok_buf, pos=pos_buf, out=out)
+        st.graph = graph
+        return st
+
+    def _clear_self_attention_cache(self):
+        """After NaN logits the self-attention KV cache may hold NaN at positions later windows never
+        rewrite; masked positions still enter attention as 0 x NaN, so every later window would fail
+        too. Zeroing in place keeps the addresses the CUDA graph uses; finite results are unchanged
+        (masked positions contribute exactly 0)."""
+        for block in self._model.decoder.blocks:
+            kv = block.attn.kv_cache
+            if kv is not None:
+                kv.k_cache.zero_()
+                kv.v_cache.zero_()
 
     def unload(self):
         with self._lock:  # never pull the model out from under a running transcription
@@ -415,10 +461,11 @@ class AriaEngine(Engine):
 
         Same model calls, same arithmetic, same greedy rules (pedal-off logit x1.05, onset/velocity
         expected-value re-pick within +-2 tokens, stop at <E> or at the first onset >= 20 s), but
-        boolean-mask writes become torch.where and the stop test runs every CANCEL_CHECK_TOKENS
+        boolean-mask writes become torch.where and the stop test runs every STOP_CHECK_TOKENS
         steps, so the GPU is not synchronised ~10 times per token. Tokens produced after the stop
-        are never written into the sequence, so the result is identical. The single-token steps
-        replay a CUDA graph when one was captured (same kernels, ~5x faster on Windows)."""
+        are never written into the sequence (and the stop never moves once reached), so the result
+        is identical however often the stop is tested. After the prefill, each step replays a CUDA
+        graph when one was captured (same kernels, no CPU in the loop)."""
         import torch
         from torch.nn.attention import SDPBackend, sdpa_kernel
 
@@ -436,57 +483,45 @@ class AriaEngine(Engine):
             pos = torch.arange(max_len, device=dev)
             xa_all = torch.arange(audio_features.shape[1], device=dev)
             xa_none = torch.zeros(0, dtype=torch.int, device=dev)
-            cols = torch.arange(3419, device=dev)[None]  # amt get_static_mask(): onset/velocity ids
-            interval = (cols >= 392) & (cols <= 3418)
-            vocab_idx = None
+            consts = graph.consts if graph is not None else None
             nan_seen = torch.zeros((), dtype=torch.bool, device=dev)
 
             idx = prefix_len
             done = False
             for idx in range(prefix_len, max_len - 1):
-                if idx == prefix_len:
-                    logits = model.decoder.forward(x=seq[:, :idx], xa=audio_features,
-                                                   x_input_pos=pos[:idx], xa_input_pos=xa_all)[:, -1]
-                elif graph is not None:
-                    graph.tok.copy_(seq[:, idx - 1:idx])
-                    graph.pos.copy_(pos[idx - 1:idx])
-                    graph.graph.replay()
-                    logits = graph.out.clone()
+                if idx == prefix_len or graph is None:
+                    if idx == prefix_len:  # prefill: the whole prompt, and the audio for the cross-attention
+                        logits = model.decoder.forward(x=seq[:, :idx], xa=audio_features,
+                                                       x_input_pos=pos[:idx], xa_input_pos=xa_all)[:, -1]
+                    else:
+                        with sdpa_kernel(SDPBackend.MATH):
+                            logits = model.decoder.forward(x=seq[:, idx - 1:idx], xa=audio_features,
+                                                           x_input_pos=pos[idx - 1:idx], xa_input_pos=xa_none)[:, -1]
+                    nan_seen |= torch.isnan(logits).any()
+                    if consts is None:
+                        consts = _pick_constants(dev, logits.size(1))
+                    next_ids, eos = _pick(logits, idx, eos, consts)
+                    insert = (prefix_len <= idx) & (eos >= idx)
+                    seq[:, idx] = torch.where(insert, next_ids, seq[:, idx])
+                    if graph is not None:  # the graph takes over from the next token
+                        graph.seq.copy_(seq)
+                        graph.eos.copy_(eos)
+                        graph.nan.copy_(nan_seen)
+                        graph.idx.fill_(idx + 1)
+                        seq, eos, nan_seen = graph.seq, graph.eos, graph.nan
                 else:
-                    with sdpa_kernel(SDPBackend.MATH):
-                        logits = model.decoder.forward(x=seq[:, idx - 1:idx], xa=audio_features,
-                                                       x_input_pos=pos[idx - 1:idx], xa_input_pos=xa_none)[:, -1]
-                nan_seen |= torch.isnan(logits).any()
-                logits[:, 389] *= 1.05  # pedal-off
-                next_ids = torch.argmax(logits, dim=-1)
+                    graph.graph.replay()  # chooses token idx and updates seq/eos/nan in place
 
-                # recalculate_tok_ids(): expected token id within +-2 of the argmax (onset/vel only)
-                probs = torch.softmax(logits, dim=-1)
-                tok_ids = next_ids.unsqueeze(1)
-                beam = (cols <= tok_ids + 2) & (cols >= tok_ids - 2)
-                keep = (interval & beam) | (cols == tok_ids)
-                probs = torch.where(keep, probs, torch.zeros((), dtype=probs.dtype, device=dev))
-                if vocab_idx is None:
-                    vocab_idx = torch.arange(probs.size(1), device=dev).float().unsqueeze(0)
-                ev = (probs * vocab_idx).sum(dim=1) / (probs.sum(dim=1) + 1e-9)
-                # Upstream's TorchScript-fused kernel rounds .5 up (roundf), not half-to-even like
-                # torch.round; ties are common because bf16 logits often tie.
-                next_ids = torch.floor(ev + 0.5).to(torch.long)
-
-                # update_seq_end_idxs_()
-                eos = torch.where((next_ids == 1) & (eos > idx), idx, eos)
-                eos = torch.where((next_ids >= 2418) & (eos > idx), idx - 2, eos)
-                insert = (prefix_len <= idx) & (eos >= idx)
-                seq[:, idx] = torch.where(insert, next_ids, seq[:, idx])
-
-                if (idx - prefix_len) % CANCEL_CHECK_TOKENS == CANCEL_CHECK_TOKENS - 1:
+                if (idx - prefix_len) % STOP_CHECK_TOKENS == STOP_CHECK_TOKENS - 1:
                     progress.check()
                     if bool(nan_seen):
+                        self._clear_self_attention_cache()
                         raise AssertionError("NaN seen in logits")
                     if bool((eos <= idx).all()):
                         done = True
                         break
             if bool(nan_seen):
+                self._clear_self_attention_cache()
                 raise AssertionError("NaN seen in logits")
             if not done and bool((eos <= idx).all()):
                 done = True
@@ -494,6 +529,40 @@ class AriaEngine(Engine):
                 logger.warning("Context length overflow when transcribing segment(s)")
             end = int(eos[0])
             return tok.decode(seq[0, :end + 1].tolist())
+
+
+def _pick_constants(dev, vocab: int):
+    import torch
+
+    cols = torch.arange(VOCAB_COLS, device=dev)[None]
+    return types.SimpleNamespace(cols=cols, interval=(cols >= 392) & (cols <= 3418),
+                                 vocab_idx=torch.arange(vocab, device=dev).float().unsqueeze(0))
+
+
+def _pick(logits, idx, eos, c):
+    """aria's token choice for one step (process_segments, without host syncs); modifies `logits`.
+    `idx` is the position being written (int, or a 0-d GPU tensor inside the CUDA graph).
+    Returns (chosen token ids, updated end-of-sequence index)."""
+    import torch
+
+    logits[:, 389] *= 1.05  # pedal-off
+    next_ids = torch.argmax(logits, dim=-1)
+
+    # recalculate_tok_ids(): expected token id within +-2 of the argmax (onset/vel only)
+    probs = torch.softmax(logits, dim=-1)
+    tok_ids = next_ids.unsqueeze(1)
+    beam = (c.cols <= tok_ids + 2) & (c.cols >= tok_ids - 2)
+    keep = (c.interval & beam) | (c.cols == tok_ids)
+    probs = torch.where(keep, probs, torch.zeros((), dtype=probs.dtype, device=probs.device))
+    ev = (probs * c.vocab_idx).sum(dim=1) / (probs.sum(dim=1) + 1e-9)
+    # Upstream's TorchScript-fused kernel rounds .5 up (roundf), not half-to-even like
+    # torch.round; ties are common because bf16 logits often tie.
+    next_ids = torch.floor(ev + 0.5).to(torch.long)
+
+    # update_seq_end_idxs_()
+    eos = torch.where((next_ids == 1) & (eos > idx), idx, eos)
+    eos = torch.where((next_ids >= 2418) & (eos > idx), idx - 2, eos)
+    return next_ids, eos
 
 
 # ---------------------------------------------------------------------------- tokens -> notes

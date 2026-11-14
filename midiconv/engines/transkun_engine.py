@@ -117,6 +117,7 @@ class TranskunEngine(Engine):
     def __init__(self):
         self._model = None
         self._device = None
+        self._crf = None
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ loading
@@ -160,7 +161,14 @@ class TranskunEngine(Engine):
         return self._model
 
     def unload(self):
-        self._model = None
+        self._model = self._crf = None
+
+    def _crf_decoder(self):
+        if self._crf is None:
+            from .semicrf import SemiCRFDecoder
+
+            self._crf = SemiCRFDecoder(self._device)
+        return self._crf
 
     # ------------------------------------------------------------------ inference
     def transcribe(self, audio: Audio, opts: dict, progress: Progress) -> Transcription:
@@ -297,13 +305,10 @@ class TranskunEngine(Engine):
         with contextlib.redirect_stdout(None):  # resolveOverlapping prints '!!!!' for zero-length notes
             return resolveOverlapping(events), (posterior, durations, frame_offset)
 
-    @staticmethod
-    def _decode_window(model, frames, start_pos, vel_mode, last_frame_idx):
+    def _decode_window(self, model, frames, start_pos, vel_mode, last_frame_idx):
         """Like TransKun.transcribeFrames for one window, but with K views averaged."""
         import torch
         import torch.nn.functional as F
-        from transkun import CRF
-        from transkun.CRF.NeuralSemiCRFInterval import forward_backward
         from transkun.Data import Note as TNote
 
         K = frames.shape[0]
@@ -315,14 +320,15 @@ class TranskunEngine(Engine):
         ctx = model.backbone(feats, outputIndices=torch.tensor(model.targetMIDIPitch, device=feats.device))
         S, S_skip = model.scorer(ctx)  # [T, T, K, nSym], [T-1, K, nSym]
         S, S_skip = S.mean(dim=2), S_skip.mean(dim=1)
-        crf = CRF.NeuralSemiCRFInterval(S, S_skip)
-        path = crf.decode(forcedStartPos=start_pos, forward=False)  # nSym lists of (begin, end) frames
+        # Exact Viterbi decode (nSym lists of (begin, end) frames) and the semi-CRF marginals, computed
+        # as upstream's NeuralSemiCRFInterval.decode(forward=False) + forward_backward, only faster
+        # (semicrf.py: same kernels, replayed as CUDA graphs; bit-identical results).
+        path, marg = self._crf_decoder().decode(S, S_skip, start_pos)  # marg[end, begin, track]
         n_sym = len(model.targetMIDIPitch)
         assert len(path) == n_sym
 
-        # Confidence: exact posterior (semi-CRF forward-backward) that the track has an event
-        # starting within +-1 frame (+-23 ms) of a given frame, whatever its end.
-        _, marg, _ = forward_backward(S, S_skip)  # marg[end, begin, track]
+        # Confidence: exact posterior that the track has an event starting within +-1 frame (+-23 ms)
+        # of a given frame, whatever its end.
         onset_p = marg.sum(dim=0)  # [begin, track]
         # Most likely end frame for an event starting at each frame (gives notes added by another
         # engine a key release estimated by this model).
