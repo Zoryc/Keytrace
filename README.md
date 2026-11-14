@@ -45,7 +45,7 @@ Keytrace is made for **solo piano**.
 
 ## Install
 
-1. Download **`Keytrace-Setup-0.2.0.exe`** (31 MB) from the [latest release](https://github.com/Zoryc/Keytrace/releases/latest).
+1. Download **`Keytrace-Setup-0.2.2.exe`** (31 MB) from the [latest release](https://github.com/Zoryc/Keytrace/releases/latest).
 2. Run it. It installs for your user only, so no administrator rights are needed.
    - Windows may say *"Windows protected your PC"* because the installer isn't code-signed. Click **More info**, then **Run anyway**.
 3. Keep **Ensemble mode** ticked for the best accuracy. Choose a desktop shortcut and the right-click menu entry if you want them.
