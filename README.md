@@ -70,7 +70,7 @@ To uninstall, use Windows **Settings → Apps → Keytrace**. It asks whether to
 
 1. Open **Keytrace** from the Start menu.
 2. Drop a recording on the window, or click **choose a file**. It reads MP3, WAV, FLAC, M4A/AAC, OGG/Opus, WMA and AIFF, and the audio of MP4, MKV, MOV and WebM videos.
-3. Conversion starts right away. A 2-minute piece takes about 20–25 seconds on an RTX 5070 Ti.
+3. Conversion starts right away. A 2-minute piece takes about 15 seconds on an RTX 5070 Ti (10 to 25, depending on how many notes it has).
 4. Listen to the preview and press **Space** to play or pause. Hover a note to see what it is, its loudness and its length. Notes Keytrace is unsure about are drawn dashed.
 5. Click **Save MIDI**.
 
@@ -82,7 +82,7 @@ Three plain choices cover almost everything:
 
 | Option | Choices |
 |---|---|
-| **Quality** | **Best**: Ensemble, the most accurate. **Faster**: about twice as quick and almost as accurate. |
+| **Quality** | **Best**: Ensemble, the most accurate. **Faster**: about three times as quick and almost as accurate. |
 | **Pedal** | **Keep as pedal**: sustain pedal events, the most faithful. **Bake into notes**: for apps that ignore the pedal. **Leave out**. |
 | **Dynamics** | **As played**: every key's real loudness. **Even**: all notes the same. |
 

@@ -75,8 +75,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 
-; Python + PyTorch + packages are downloaded after the files are copied (about 3 GB installed,
-; plus the download cache while installing).
+; Python + PyTorch + packages are downloaded after the files are copied (about 3 GB downloaded,
+; about 5 GB installed, plus the download cache while installing).
 ExtraDiskSpaceRequired=7000000000
 
 ; Inno Setup 6.7+ turns on Windows' RedirectionGuard by default, and child processes inherit it.

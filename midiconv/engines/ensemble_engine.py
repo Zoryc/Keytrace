@@ -24,7 +24,7 @@ class EnsembleEngine(Engine):
     name = "Ensemble (Transkun + Aria)"
     instrument = "piano"
     summary = ("Most accurate: Transkun V2 transcribes, and Aria-AMT recovers notes Transkun was unsure "
-               "about. About twice as slow as Transkun alone.")
+               "about. Takes about three times as long as Transkun alone.")
 
     def __init__(self, transkun: Engine, aria: Engine):
         self.transkun, self.aria = transkun, aria
