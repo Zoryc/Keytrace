@@ -21,6 +21,25 @@ TERMINAL = {"done", "error", "cancelled"}
 KEEP_JOBS = 50
 
 
+def _warm_up_audio():
+    """Six seconds of a soft, decaying piano-like arpeggio (C4 E4 G4 C5), stereo 44.1 kHz."""
+    import numpy as np
+
+    from .audio import Audio
+
+    sr = 44100
+    t = np.arange(int(6.0 * sr)) / sr
+    y = np.zeros_like(t)
+    for k, midi in enumerate((60, 64, 67, 72)):
+        t0 = 0.5 + 1.0 * k
+        f = 440.0 * 2 ** ((midi - 69) / 12)
+        tt = np.clip(t - t0, 0.0, None)
+        env = (t >= t0) * np.exp(-2.5 * tt)
+        y += env * sum(np.sin(2 * np.pi * f * h * tt) / h for h in (1, 2, 3, 4))
+    y = (0.2 * y / np.abs(y).max()).astype(np.float32)
+    return Audio(np.stack([y, 0.9 * y], axis=1), sr)
+
+
 def safe_stem(filename: str) -> str:
     stem = Path(filename or "audio").stem
     stem = re.sub(r"[^\w\-. ()\[\]]+", "_", stem, flags=re.UNICODE).strip(" ._") or "audio"
@@ -172,14 +191,33 @@ class JobManager:
             self._process(job)
 
     def _warm_up(self) -> None:
-        """Load the default engine of every instrument so the first conversion starts fast."""
+        """Load the default engine of every instrument and run it once on a short synthetic clip, so
+        the first conversion starts fast: CUDA and cuBLAS set-up, TorchScript's first runs and the CUDA
+        graph recordings happen here instead. Results never depend on this (the engines are
+        deterministic and keep no state between files besides these caches). Without a CUDA GPU there
+        is nothing to warm up, and a trial run would only keep the processor busy, so engines are
+        just loaded."""
+        try:
+            import torch
+
+            cuda = torch.cuda.is_available()
+        except Exception:
+            torch, cuda = None, False
         for inst in engines.instruments():
             eng = inst.engines.get(inst.default_engine)
-            if eng is not None and eng.availability()[0] and hasattr(eng, "_load"):
-                try:
-                    eng._load()
-                except Exception:
-                    traceback.print_exc()
+            if eng is None or not eng.availability()[0] or not hasattr(eng, "_load"):
+                continue
+            try:
+                eng._load()
+                if cuda:
+                    eng.transcribe(_warm_up_audio(), coerce_options(eng.options, {}), Progress())
+            except Exception:
+                traceback.print_exc()
+        if cuda:
+            try:
+                torch.cuda.empty_cache()  # keep only the models and the CUDA graphs resident while idle
+            except Exception:
+                pass
 
     def _process(self, job: Job) -> None:
         def report(frac: float, msg: str | None) -> None:

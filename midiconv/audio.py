@@ -107,4 +107,8 @@ def write_preview(audio: Audio, path: str | Path) -> None:
     """Lossless preview on exactly the timeline the engines saw (for A/B playback in the browser)."""
     import soundfile as sf
 
-    sf.write(str(path), np.clip(audio.samples, -1.0, 1.0), audio.sr, format="FLAC", subtype="PCM_16")
+    block = 1 << 20  # frames; clipping block by block avoids a second full-length copy of the audio
+    with sf.SoundFile(str(path), "w", samplerate=audio.sr, channels=audio.channels, format="FLAC",
+                      subtype="PCM_16") as f:
+        for i in range(0, len(audio.samples), block):
+            f.write(np.clip(audio.samples[i:i + block], -1.0, 1.0))

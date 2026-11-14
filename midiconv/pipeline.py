@@ -9,6 +9,7 @@ Files written to the work directory:
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -40,12 +41,28 @@ def run(src: str | Path, workdir: str | Path, *, instrument: str = "piano", engi
     t0 = time.perf_counter()
     progress(0.0, "Reading the audio")
     audio = load_audio(src)
-    if preview:
-        progress(0.02, "Preparing the preview")
-        write_preview(audio, workdir / PREVIEW_FILE)
     t_decode = time.perf_counter() - t0
+    progress.check()  # cancelled or deleted while the file was being read
 
-    raw = eng.transcribe(audio, e_opts, progress.sub(0.04, 0.98))
+    # The preview FLAC is encoded on a second thread while the engine works (libFLAC releases the GIL).
+    preview_errors: list[BaseException] = []
+    preview_thread = None
+    if preview:
+        def write_preview_file():
+            try:
+                write_preview(audio, workdir / PREVIEW_FILE)
+            except BaseException as e:  # re-raised below, after the engine
+                preview_errors.append(e)
+
+        preview_thread = threading.Thread(target=write_preview_file, name="preview", daemon=True)
+        preview_thread.start()
+    try:
+        raw = eng.transcribe(audio, e_opts, progress.sub(0.04, 0.98))
+    finally:
+        if preview_thread is not None:
+            preview_thread.join()
+    if preview_errors:
+        raise preview_errors[0]
     save_raw(raw, workdir / RAW_FILE)
     progress(0.99, "Writing the MIDI file")
     stats = {

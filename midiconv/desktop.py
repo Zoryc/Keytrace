@@ -271,7 +271,9 @@ def _watch_inbox(window, ready: threading.Event, started_at: float) -> None:
             except (OSError, ValueError):
                 paths = []
             req.unlink(missing_ok=True)
-            if paths and ready.wait(60):
+            # No time limit: on a cold start the page can take a while (PyTorch loads after the window
+            # opens); if the backend fails, the window shows an error and nothing can be converted anyway.
+            if paths and ready.wait():
                 _convert_in_window(window, paths)
 
 
@@ -305,15 +307,10 @@ def main(argv: list[str] | None = None) -> int:
         _message_box(f"The app window component could not be loaded ({e}).\n\nRe-run the {APP_NAME} setup to repair it.")
         return 1
 
-    from . import server
-
     token = secrets.token_urlsafe(32)
-    port = _free_port()
-    server.configure(token)
-    httpd = server.make_server(port)
-    threading.Thread(target=httpd.run, name="http", daemon=True).start()
-    if os.environ.get("MIDICONV_DEBUG"):
-        log.info("debug URL: http://127.0.0.1:%d/?token=%s", port, token)
+    # The backend is imported and started in boot(), once the window is up: importing it loads
+    # PyTorch, which takes a few seconds on a cold start.
+    backend: dict = {}
 
     appearance = _appearance()
     dark = _effective_dark(appearance)
@@ -335,7 +332,8 @@ def main(argv: list[str] | None = None) -> int:
     window.events.before_show += before_show
 
     def on_closing():
-        mgr = server.manager_if_started()
+        server = backend.get("server")
+        mgr = server.manager_if_started() if server is not None else None
         busy = mgr is not None and any(j["status"] in ("queued", "running") for j in mgr.list())
         if not busy:
             return True
@@ -346,6 +344,21 @@ def main(argv: list[str] | None = None) -> int:
     window.events.closing += on_closing
 
     def boot():
+        try:
+            from . import server
+
+            server.configure(token)
+            port = _free_port()  # right before binding it, so nothing else can take it meanwhile
+            httpd = server.make_server(port)
+            threading.Thread(target=httpd.run, name="http", daemon=True).start()
+            backend.update(server=server, httpd=httpd)
+        except Exception:
+            log.exception("backend failed to load")
+            window.load_html(_error_html(api._dark, "The converter engine could not be loaded. Re-run the "
+                                                   f"{APP_NAME} setup to repair it.", log_path))
+            return
+        if os.environ.get("MIDICONV_DEBUG"):
+            log.info("debug URL: http://127.0.0.1:%d/?token=%s", port, token)
         deadline = time.time() + 60
         while not httpd.started and time.time() < deadline:
             time.sleep(0.05)
@@ -379,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
                      "included with Windows 11 and can be installed from microsoft.com for Windows 10.")
         return 1
     finally:
-        _shutdown(httpd)
+        _shutdown(backend.get("httpd"))
     return 0
 
 
@@ -436,16 +449,16 @@ def _style_window(window, dark: bool, set_icon: bool = True) -> None:
 def _shutdown(httpd) -> None:
     log.info("closing")
     try:
-        from . import server
-
-        mgr = server.manager_if_started()
+        server = sys.modules.get(__package__ + ".server")  # not imported yet: nothing to cancel
+        mgr = server.manager_if_started() if server is not None else None
         if mgr is not None:
             for j in mgr.list():
                 if j["status"] in ("queued", "running"):
                     mgr.cancel(j["id"])
     except Exception:
         pass
-    httpd.should_exit = True
-    time.sleep(0.3)
+    if httpd is not None:
+        httpd.should_exit = True
+        time.sleep(0.3)
     logging.shutdown()
     os._exit(0)  # do not wait for the GPU worker thread
